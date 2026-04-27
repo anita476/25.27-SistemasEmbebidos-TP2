@@ -1,6 +1,7 @@
 #include "include/gpio.h"
 #include "../../../SDK/CMSIS/MK64F12.h"
 #include "../../../SDK/startup/hardware.h"
+#include "include/port.h"
 #include "include/test_pin.h"
 #include <stdint.h>
 
