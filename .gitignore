@@ -1,0 +1,27 @@
+# logging 
+AzureRTOS_TAD_logs/*
+FreeRTOS_TAD_logs/* 
+ZephyrRTOS_TAD_logs/*
+
+
+.DS_Store
+
+#IDE specific
+.metadata
+.mcuxpressoide_packages_support/*
+*.launch
+
+# compilation and binaries
+*/Debug/*
+*/Release/*
+*.mex
+*.bin
+
+# settings 
+*/.settings/*
+.settings
+/Debug/
+
+
+# logs 
+*.log
