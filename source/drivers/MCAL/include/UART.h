@@ -45,7 +45,7 @@ uint8_t UART_data_transmit(uint8_t uart_id, unsigned char *txdata, uint8_t lengt
 /**
  * @brief Receive data if available. This clears the read status
  * @param out The out buffer to which the data is copied
- * @returns True if data was available and written to out buffer, false if not
+ * @returns The number of bytes read into the buffer. 0 if no data was available.
  **/
-bool UART_data_receive(uint8_t uart_id, uint8_t *out);
+uint8_t UART_data_receive(uint8_t uart_id, uint8_t *out, uint8_t length);
 #endif /*_UART_NONBLOCKING_FIFO_H_*/

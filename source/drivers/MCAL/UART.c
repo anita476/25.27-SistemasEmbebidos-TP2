@@ -1,4 +1,4 @@
-#include "include/UART.h"
+#include "include/uart.h"
 #include "include/port.h"
 #define UART_ALTS 5
 #define MAX_UART_USE 5 /* Max number of uarts that can be in use at any given time*/
@@ -56,6 +56,7 @@ static bool buf_is_empty(const UartBuffer_t *b);
 static bool buf_is_full(const UartBuffer_t *b);
 static bool buf_enqueue(UartBuffer_t *b, uint8_t byte);
 static uint8_t buf_dequeue(UartBuffer_t *b);
+static uint8_t buf_count(const UartBuffer_t *b);
 static uint32_t find_uart_id(pin_t tx, pin_t rx);
 static uint8_t decode_size(uint8_t encoded);
 
@@ -147,7 +148,7 @@ uint8_t UART_data_transmit(uint8_t uart_id, unsigned char *txdata, uint8_t lengt
 		return 0;
 
 	// producer - consumer -> protect buffer HEAD
-	NVIC_DisableIRQ(uart_nvim_ints_NBF[uart_id]);
+	// NVIC_DisableIRQ(uart_nvim_ints_NBF[uart_id]);
 	uint8_t sent = 0;
 	for (uint8_t i = 0; i < length; i++) {
 		if (!buf_enqueue((UartBuffer_t *) &uart_state_NBF[uart_id].tx, txdata[i]))
@@ -156,19 +157,32 @@ uint8_t UART_data_transmit(uint8_t uart_id, unsigned char *txdata, uint8_t lengt
 	}
 	if (sent > 0)
 		uart_ptrs_NBF[uart_id]->C2 |= UART_C2_TIE_MASK;
-	NVIC_EnableIRQ(uart_nvim_ints_NBF[uart_id]);
+	// NVIC_EnableIRQ(uart_nvim_ints_NBF[uart_id]);
 	return sent; // caller knows if bytes were dropped
 }
 
-bool UART_data_receive(uint8_t uart_id, uint8_t *out) {
-	// CONSUMER -> protect _tail
+uint8_t UART_data_receive(uint8_t uart_id, uint8_t *out, uint8_t length) {
+	if (!uart_state_NBF[uart_id].active)
+		return 0;
+
 	NVIC_DisableIRQ(uart_nvim_ints_NBF[uart_id]);
-	if (!uart_state_NBF[uart_id].active || buf_is_empty((UartBuffer_t *) &uart_state_NBF[uart_id].rx)) {
-		return false;
+
+	//
+	uint8_t sw_available = buf_count((UartBuffer_t *) &uart_state_NBF[uart_id].rx);
+	if (sw_available < length) { // only drain fifo if available in sf buff is less than requested!
+		uint8_t hw_available = uart_ptrs_NBF[uart_id]->RCFIFO;
+		while (hw_available--) {
+			buf_enqueue((UartBuffer_t *) &uart_state_NBF[uart_id].rx, uart_ptrs_NBF[uart_id]->D);
+		}
 	}
-	*out = buf_dequeue((UartBuffer_t *) &uart_state_NBF[uart_id].rx);
 	NVIC_EnableIRQ(uart_nvim_ints_NBF[uart_id]);
-	return true;
+
+	uint8_t read = 0;
+	while (read < length && !buf_is_empty((UartBuffer_t *) &uart_state_NBF[uart_id].rx)) {
+		out[read++] = buf_dequeue((UartBuffer_t *) &uart_state_NBF[uart_id].rx);
+	}
+
+	return read;
 }
 
 static uint32_t find_uart_id(pin_t tx, pin_t rx) {
@@ -185,13 +199,15 @@ static uint32_t find_uart_id(pin_t tx, pin_t rx) {
 bool UART_tstatus(uint8_t uart_id) {
 	if (!uart_state_NBF[uart_id].active)
 		return false;
-	return buf_is_empty((UartBuffer_t *) &uart_state_NBF[uart_id].tx);
+	return !buf_is_full((UartBuffer_t *) &uart_state_NBF[uart_id].tx);
 }
 
 bool UART_rstatus(uint8_t uart_id) {
 	if (!uart_state_NBF[uart_id].active)
 		return false;
-	return !buf_is_empty((UartBuffer_t *) &uart_state_NBF[uart_id].rx);
+
+	return !buf_is_empty((UartBuffer_t *) &uart_state_NBF[uart_id].rx) ||
+		   (uart_ptrs_NBF[uart_id]->RCFIFO > 0); // checks buffer AND fifo!
 }
 
 void UART_RX_TX_ISR(uint8_t id) {
@@ -250,7 +266,9 @@ static bool buf_is_empty(const UartBuffer_t *b) {
 static bool buf_is_full(const UartBuffer_t *b) {
 	return buf_next(b->_head) == b->_tail;
 }
-
+static uint8_t buf_count(const UartBuffer_t *b) {
+	return (b->_head - b->_tail + BUFFER_CHAR_SIZE) % BUFFER_CHAR_SIZE;
+}
 /** Returns false if buffer was full and byte was dropped) */
 static bool buf_enqueue(UartBuffer_t *b, uint8_t byte) {
 	if (buf_is_full(b))
