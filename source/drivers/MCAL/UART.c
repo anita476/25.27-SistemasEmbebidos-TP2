@@ -2,8 +2,8 @@
 #include "include/port.h"
 #define UART_ALTS 5
 #define MAX_UART_USE 5 /* Max number of uarts that can be in use at any given time*/
-#define BUFFER_CHAR_SIZE 32
-#define UART_HAL_DEFAULT_BAUDRATE 9600
+#define BUFFER_CHAR_SIZE 255
+#define UART_HAL_DEFAULT_BAUDRATE 115200
 #define UART_SENTINEL 0xFF
 typedef struct {
 	uint32_t uart_num;
@@ -60,11 +60,18 @@ static uint8_t buf_count(const UartBuffer_t *b);
 static uint32_t find_uart_id(pin_t tx, pin_t rx);
 static uint8_t decode_size(uint8_t encoded);
 
-uint32_t UART_drv_instance_init(pin_t RX_pin, pin_t TX_pin) {
+static void UART_set_baudrate(uint8_t uart_id, uint32_t baudrate);
+
+// @todo what are the accepted baudrates?
+uint32_t UART_drv_instance_init(pin_t RX_pin, pin_t TX_pin, int baudrate) {
 	uint8_t id = find_uart_id(TX_pin, RX_pin);
 	if (id == INVALID_UART || uart_count_NBF >= MAX_UART_USE) {
 		return INVALID_UART;
 	}
+
+	/* is it already active? return the id, @todo if we add the other alts we must change this to invalid */
+	if (uart_state_NBF[id].active)
+		return id;
 
 	// enable clock for the pin port
 	SIM->SCGC5 |= port_clock_masks[PIN2PORT(uart_pin_map_NBF[id].rx_pin)];
@@ -79,7 +86,7 @@ uint32_t UART_drv_instance_init(pin_t RX_pin, pin_t TX_pin) {
 	// enable nvic for that uart
 	NVIC_EnableIRQ(uart_nvim_ints_NBF[id]);
 
-	UART_set_baudrate(id, 9600);
+	UART_set_baudrate(id, baudrate);
 
 	/**CONFIGURING FIFO  **/
 	// 4 BYTES WATERMAKS
@@ -127,22 +134,6 @@ uint32_t UART_drv_instance_init(pin_t RX_pin, pin_t TX_pin) {
 	return id;
 }
 
-void UART_set_baudrate(uint8_t uart_id, uint32_t baudrate) {
-	uint16_t sbr, brfa;
-	uint32_t clock;
-
-	clock = ((uart_id == 0) || (uart_id == 1)) ? (__CORE_CLOCK__) : (__CORE_CLOCK__ >> 1);
-	baudrate = ((baudrate == 0) ? (UART_HAL_DEFAULT_BAUDRATE) :
-								  ((baudrate > 0x1FFF) ? (UART_HAL_DEFAULT_BAUDRATE) : (baudrate)));
-
-	sbr = clock / (baudrate << 4);				 // sbr = clock/(Baudrate x 16)
-	brfa = (clock << 1) / baudrate - (sbr << 5); // brfa = 2*Clock/baudrate - 32*sbr
-
-	uart_ptrs_NBF[uart_id]->BDH = UART_BDH_SBR(sbr >> 8);
-	uart_ptrs_NBF[uart_id]->BDL = UART_BDL_SBR(sbr);
-	uart_ptrs_NBF[uart_id]->C4 = (uart_ptrs_NBF[uart_id]->C4 & ~UART_C4_BRFA_MASK) | UART_C4_BRFA(brfa);
-}
-
 uint8_t UART_data_transmit(uint8_t uart_id, unsigned char *txdata, uint8_t length) {
 	if (!uart_state_NBF[uart_id].active)
 		return 0;
@@ -166,8 +157,6 @@ uint8_t UART_data_receive(uint8_t uart_id, uint8_t *out, uint8_t length) {
 		return 0;
 
 	NVIC_DisableIRQ(uart_nvim_ints_NBF[uart_id]);
-
-	//
 	uint8_t sw_available = buf_count((UartBuffer_t *) &uart_state_NBF[uart_id].rx);
 	if (sw_available < length) { // only drain fifo if available in sf buff is less than requested!
 		uint8_t hw_available = uart_ptrs_NBF[uart_id]->RCFIFO;
@@ -181,7 +170,6 @@ uint8_t UART_data_receive(uint8_t uart_id, uint8_t *out, uint8_t length) {
 	while (read < length && !buf_is_empty((UartBuffer_t *) &uart_state_NBF[uart_id].rx)) {
 		out[read++] = buf_dequeue((UartBuffer_t *) &uart_state_NBF[uart_id].rx);
 	}
-
 	return read;
 }
 
@@ -290,4 +278,20 @@ static uint8_t decode_size(uint8_t encoded) {
 	if (encoded == 0)
 		return 1;
 	return 1 << (encoded + 1);
+}
+
+static void UART_set_baudrate(uint8_t uart_id, uint32_t baudrate) {
+	uint16_t sbr, brfa;
+	uint32_t clock;
+
+	clock = ((uart_id == 0) || (uart_id == 1)) ? (__CORE_CLOCK__) : (__CORE_CLOCK__ >> 1);
+	baudrate = ((baudrate == 0) ? (UART_HAL_DEFAULT_BAUDRATE) :
+								  ((baudrate > 0x1FFF) ? (UART_HAL_DEFAULT_BAUDRATE) : (baudrate)));
+
+	sbr = clock / (baudrate << 4);				 // sbr = clock/(Baudrate x 16)
+	brfa = (clock << 1) / baudrate - (sbr << 5); // brfa = 2*Clock/baudrate - 32*sbr
+
+	uart_ptrs_NBF[uart_id]->BDH = UART_BDH_SBR(sbr >> 8);
+	uart_ptrs_NBF[uart_id]->BDL = UART_BDL_SBR(sbr);
+	uart_ptrs_NBF[uart_id]->C4 = (uart_ptrs_NBF[uart_id]->C4 & ~UART_C4_BRFA_MASK) | UART_C4_BRFA(brfa);
 }

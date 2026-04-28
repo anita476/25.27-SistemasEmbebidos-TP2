@@ -2,16 +2,7 @@
 #include "../../drivers/MCAL/include/uart.h"
 #include <string.h>
 
-bool uart_test(void) {
-	uint8_t uart_id = UART_drv_instance_init(PORTNUM2PIN(PB, 16), PORTNUM2PIN(PB, 17));
-
-	if (uart_id == INVALID_UART) {
-		printf("Failed to initialize uart\n");
-		return false;
-	}
-
-	UART_set_baudrate(uart_id, BAUDRATE);
-
+bool uart_test(uint8_t uart_id) {
 	const char *start_msg = "\r\n=== UART TEST START ===\r\n"
 							"Type something. Press Ctrl+A to exit.\r\n";
 
@@ -30,7 +21,6 @@ bool uart_test(void) {
 				if (c == CTRL_A) {
 					const char *exit_msg = "\n[CTRL + A RECEIVED - EXITING]\n";
 					UART_data_transmit(uart_id, (unsigned char *) exit_msg, strlen(exit_msg));
-
 					running = false;
 					break;
 				}

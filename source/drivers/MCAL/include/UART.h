@@ -12,8 +12,9 @@
  * @returns A number representing uart id, or INVALID_UART if unsuccessful
  * @param RX_pin Receiver pin
  * @param TX_pin Transciever pin
+ * @param baudrate Desired baudrate
  **/
-uint32_t UART_drv_instance_init(pin_t RX_pin, pin_t TX_pin);
+uint32_t UART_drv_instance_init(pin_t RX_pin, pin_t TX_pin, int baudrate);
 
 /**
  * @brief Query the read status of a uart
@@ -30,10 +31,6 @@ bool UART_rstatus(uint8_t uart_id);
  */
 bool UART_tstatus(uint8_t uart_id);
 
-/**
- * @brief Set baudrate for a uart number (uarts go form 0 to 4)
- **/
-void UART_set_baudrate(uint8_t uart_id, uint32_t baudrate);
 
 /**
  * @brief Queue data to send. (Non blocking)

@@ -41,7 +41,7 @@ void App_Init(void) {
 	// timer_drv_init();
 	// FSM_InitTable();
 
-	id = UART_drv_instance_init(PORTNUM2PIN(PB, 16), PORTNUM2PIN(PB, 17));
+	id = UART_drv_instance_init(PORTNUM2PIN(PB, 16), PORTNUM2PIN(PB, 17), BAUDRATE);
 	// initial state
 	g_app_ctx.current_state = FSM_GetInitState();
 }
@@ -51,7 +51,7 @@ void App_Run(void) {
 	while (1) {
 		// timer_drv_update(); /* must be called every iteration */
 
-		bool res = uart_test();
+		bool res = uart_test(id);
 		if (res) {
 			printf("Uart test completed successfully\n");
 		}

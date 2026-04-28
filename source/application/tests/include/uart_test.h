@@ -8,4 +8,8 @@
 #define BUFFER_SIZE 64
 #define CTRL_A 0x01
 
-bool uart_test(void);
+/*
+ * @brief Test a certain uart port. Assumes the uart is already initialized
+ *
+ */
+bool uart_test(uint8_t uart_id);
