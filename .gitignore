@@ -10,6 +10,8 @@ ZephyrRTOS_TAD_logs/*
 .metadata
 .mcuxpressoide_packages_support/*
 *.launch
+TiltNetworkTool-1.0.0/.idea
+
 
 # compilation and binaries
 */Debug/*
@@ -21,7 +23,6 @@ ZephyrRTOS_TAD_logs/*
 */.settings/*
 .settings
 /Debug/
-
 
 # logs 
 *.log

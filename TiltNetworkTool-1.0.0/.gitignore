@@ -1,0 +1,44 @@
+# Minimal .gitignore (Python + VSCode)
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Entornos virtuales
+.env
+.venv
+env/
+venv/
+
+# Build / dist / paquetes
+build/
+dist/
+*.egg-info/
+
+# Caches / reports
+.pytest_cache/
+.mypy_cache/
+.coverage
+
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+*/.idea
+# Logs y binarios compilados
+*.log
+*.pyc
+*.so
+*.dll
+*.dylib
+
+.idea/
+TiltNetworkTool-1.0.0/.idea

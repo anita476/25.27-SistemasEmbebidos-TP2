@@ -1,0 +1,6 @@
+PyQt6
+PyOpenGL
+numpy
+pyrr
+pyserial
+pyqtgraph

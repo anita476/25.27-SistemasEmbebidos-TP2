@@ -1,9 +1,8 @@
-# K64f Template Repository 
-Basic setup with some drivers for FRDM-K64f board using CMSIS SDK.
+# Sistemas Embebidos - TP1
+## Grupo 1
+### Integrantes
+* Cristóbal Kramer
+* Federico Gentile
+* Rodrigo Devesa
+* Ana Negre
 
-## Drivers
-
-* Periodic Interrupt Routine Driver
-* GPIO driver
-* Timer driver
-* Switch Driver
