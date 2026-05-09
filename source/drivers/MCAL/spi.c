@@ -7,7 +7,6 @@
 #define SPI_COUNT 3
 #define SPI_MAX_DEVICE_COUNT 6 // not all are implemented in all spi modules
 
-
 typedef struct {
 	pin_t pcs;
 	PORTMux_t alt;
@@ -281,24 +280,27 @@ uint8_t spi_drv_free_rcv_buf(uint8_t spi_num) {
 }
 
 /**
-* @brief Allows reception of data from slave 
-* @param spi_num spi module
-* @param slave_num Selected slave
-**/
-void spi_drv_allow_read(uint8_t spi_num, uint8_t slave_num){
-	if(spi_num >= SPI_COUNT || !spi_state[spi_num].active|| !(spi_state[spi_num].slave_count > slave_num)){return;}
+ * @brief Allows reception of data from slave
+ * @param spi_num spi module
+ * @param slave_num Selected slave
+ **/
+void spi_drv_allow_read(uint8_t spi_num, uint8_t slave_num) {
+	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active || !(spi_state[spi_num].slave_count > slave_num)) {
+		return;
+	}
 	spi_state[spi_num].rx_pending = true;
 }
 
 /**
-* @brief Stops reception of data from slave (incoming bytes are discarded)
-* @param spi_num spi module
-* @param slave_num Selected slave
-**/
-void spi_drv_notallow_read(uint8_t spi_num, uint8_t slave_num){
-	if(spi_num >= SPI_COUNT || !spi_state[spi_num].active|| !(spi_state[spi_num].slave_count > slave_num)){return;}
-	spi_state[spi_num].rx_pending =false;
-
+ * @brief Stops reception of data from slave (incoming bytes are discarded)
+ * @param spi_num spi module
+ * @param slave_num Selected slave
+ **/
+void spi_drv_notallow_read(uint8_t spi_num, uint8_t slave_num) {
+	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active || !(spi_state[spi_num].slave_count > slave_num)) {
+		return;
+	}
+	spi_state[spi_num].rx_pending = false;
 }
 
 /*****************************************INTERRUPTS  ROUTINES******************************************/

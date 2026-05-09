@@ -77,7 +77,7 @@ static uint8_t test_add_slave(void) {
 	int8_t slave = spi_drv_add_slave(0);
 	_assert(slave == 0, "first slave returns index 0");
 
-	spi_drv_allow_read( 0, slave); // always allow reading for loopback test!
+	spi_drv_allow_read(0, slave); // always allow reading for loopback test!
 
 	int8_t bad = spi_drv_add_slave(2); // SPI2 not initialized
 	_assert(bad == -1, "add_slave on uninit spi rejected");
@@ -179,14 +179,14 @@ static void test_invalid_slave(void) {
 static void test_stress(uint8_t slave) {
 	_print("\r\n-- Stress: Full Buffer --\r\n");
 
-	uint8_t tx[SPI_TX_BUF_SIZE];
-	uint8_t rx[SPI_TX_BUF_SIZE] = {0};
+	uint8_t tx[SPI_BUFF_SIZE];
+	uint8_t rx[SPI_BUFF_SIZE] = {0};
 
-	for (uint8_t i = 0; i < SPI_TX_BUF_SIZE; i++)
+	for (uint8_t i = 0; i < SPI_BUFF_SIZE; i++)
 		tx[i] = i;
 
-	uint8_t queued = spi_drv_write(0, slave, tx, SPI_TX_BUF_SIZE);
-	_assert(queued == SPI_TX_BUF_SIZE, "full buffer write accepted");
+	uint8_t queued = spi_drv_write(0, slave, tx, SPI_BUFF_SIZE);
+	_assert(queued == SPI_BUFF_SIZE, "full buffer write accepted");
 
 	// overflow: one more byte while buffer is full
 	uint8_t extra = 0xFF;
@@ -195,18 +195,18 @@ static void test_stress(uint8_t slave) {
 
 	delay_ms(15);
 
-	bool read_ok = spi_drv_read(0, slave, rx, SPI_TX_BUF_SIZE);
+	bool read_ok = spi_drv_read(0, slave, rx, SPI_BUFF_SIZE);
 	_assert(read_ok, "full buffer loopback read succeeded");
 
-	bool match = (memcmp(tx, rx, SPI_TX_BUF_SIZE) == 0);
+	bool match = (memcmp(tx, rx, SPI_BUFF_SIZE) == 0);
 	_assert(match, "stress loopback data matches");
 
 	if (!match) {
 		_print("    TX: ");
-		_print_hex_buf(tx, SPI_TX_BUF_SIZE);
+		_print_hex_buf(tx, SPI_BUFF_SIZE);
 		_print("\r\n");
 		_print("    RX: ");
-		_print_hex_buf(rx, SPI_TX_BUF_SIZE);
+		_print_hex_buf(rx, SPI_BUFF_SIZE);
 		_print("\r\n");
 	}
 }
