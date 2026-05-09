@@ -13,7 +13,9 @@
 #include "../drivers/MCAL/include/uart.h"
 #include "include/App_commons.h"
 #include "include/fsm_table.h"
+#include "tests/include/spi_test.h"
 #include "tests/include/uart_test.h"
+
 /*******************************************************************************
  * CONSTANT AND MACRO DEFINITIONS USING #DEFINE
  ******************************************************************************/
@@ -48,14 +50,15 @@ void App_Init(void) {
 static uint8_t offset = 0;
 /* Función que se llama constantemente en un ciclo infinito */
 void App_Run(void) {
+	spi_test_app(id);
 	while (1) {
 		// timer_drv_update(); /* must be called every iteration */
 
-		bool res = uart_test(id);
-		if (res) {
-			printf("Uart test completed successfully\n");
-		}
-
+		// bool res = uart_test(id);
+		// if (res) {
+		//	printf("Uart test completed successfully\n");
+		// }
+		;
 		// EVENT curr_event = App_CaptureEvent();
 
 		// Feed event to FSM if theres something

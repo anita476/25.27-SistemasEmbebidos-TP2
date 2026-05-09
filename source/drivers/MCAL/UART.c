@@ -202,6 +202,13 @@ void UART_RX_TX_ISR(uint8_t id) {
 	UART_Type *uart = uart_ptrs_NBF[id];
 	uint8_t s1 = uart->S1;
 
+	/** ERROR CHECK  */
+	if (s1 & (UART_S1_OR_MASK | UART_S1_NF_MASK | UART_S1_FE_MASK | UART_S1_PF_MASK)) {
+		// to clear error flags , we must read s1 (done) and rrad D register
+		volatile uint8_t dummy_read = uart->D;
+		(void) dummy_read; // castear a void para que el compilador no tire warning de variable sin usar
+	}
+
 	// Drain the RX hardware FIFO into sf buff
 	if (s1 & UART_S1_RDRF_MASK) {
 		// RDRF fires at watermark, we keep reading until nothing is left to rcv
