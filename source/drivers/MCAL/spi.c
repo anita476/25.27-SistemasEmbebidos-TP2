@@ -6,6 +6,7 @@
 #define SPI_HAL_DEFAULT_BAUDRATE 1000000UL // 1 MHz
 #define SPI_COUNT 3
 #define SPI_MAX_DEVICE_COUNT 6 // not all are implemented in all spi modules
+#define SPI_HW_FIFO_DEPTH 4
 
 typedef struct {
 	pin_t pcs;
@@ -35,8 +36,12 @@ typedef struct {
 	uint8_t current_slave; // slave being transmitted to
 	SPIRingBuff_t tx_buf;
 	SPIRingBuff_t rx_buf;
-	volatile bool tx_pending; // do we have something to send?
-	volatile bool rx_pending; // do we want to receive?
+	volatile bool tx_pending;		  // queued in tx_buf
+	volatile uint8_t rx_expected;	  // bytes still to clock in and store
+	volatile uint8_t total_remaining; // bytes left in  transaction  -> CONT
+
+	volatile bool *done_flag; // set true by ISR when transaction is complete
+
 } SPIState_t;
 
 static SPI_Type *const spi_ptrs[] = SPI_BASE_PTRS;
@@ -113,7 +118,7 @@ bool spi_drv_init(uint8_t spi_num, uint32_t baud) {
 		PORT_PCR_MUX(spi_pin_map[spi_num].alt) | PORT_PCR_IRQC(PORT_eDisabled);
 
 	//
-	port_ptrs[spi_pin_map[spi_num].port]->PCR[PIN2NUM(spi_pin_map[spi_num].miso)] =
+	port_ptrs[spi_pin_map[spi_num].port]->PCR[PIN2NUM(spi_pin_map[spi_num].mosi)] =
 		PORT_PCR_MUX(spi_pin_map[spi_num].alt) | PORT_PCR_IRQC(PORT_eDisabled);
 
 	port_ptrs[spi_pin_map[spi_num].port]->PCR[PIN2NUM(spi_pin_map[spi_num].sck)] =
@@ -147,11 +152,17 @@ bool spi_drv_init(uint8_t spi_num, uint32_t baud) {
 	// release halt, module is now active
 	spi_ptrs[spi_num]->MCR &= ~SPI_MCR_HALT_MASK;
 
-	spi_state[spi_num].active = true;
-	spi_state[spi_num].slave_count = 0;
-	spi_state[spi_num].current_slave = 0;
-	spi_state[spi_num].tx_buf = (SPIRingBuff_t) {0};
-	spi_state[spi_num].rx_buf = (SPIRingBuff_t) {0};
+	spi_state[spi_num] = ((SPIState_t) {
+		.active = true,
+		.slave_count = 0,
+		.current_slave = 0,
+		.tx_pending = false,
+		.rx_expected = 0,
+		.total_remaining = 0,
+		.done_flag = NULL,
+		.tx_buf = {0},
+		.rx_buf = {0},
+	});
 
 	return true;
 }
@@ -160,7 +171,7 @@ bool spi_drv_init(uint8_t spi_num, uint32_t baud) {
  * @brief Initialize a device in spi bus. Slaves supported depends on module.
  * @returns The slave number, or -1 if an error ocurred.
  */
-uint8_t spi_drv_add_slave(uint8_t spi_num) {
+int8_t spi_drv_add_slave(uint8_t spi_num) {
 	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active) {
 		return -1;
 	}
@@ -188,42 +199,79 @@ uint8_t spi_drv_add_slave(uint8_t spi_num) {
 }
 
 /**
- * @brief Queues to transfer buffer to send to slave. Non blocking
+ * @brief TX only: Queues to transfer buffer to send to slave. Non blocking. CS held low for entire len bytes via CONT.
  * @param spi_num Spi module
  * @param slave_num Selected slave
- * @returns Number of bytes efectively queued into buffer. -1 on error
+ * @returns Number of bytes efectively queued into buffer. 0 on error
  */
-uint8_t spi_drv_write(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data, size_t len) {
+uint8_t spi_drv_write(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data, size_t len,
+					  volatile bool *done_flag) {
 	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active)
 		return 0;
 	if (slave_num >= spi_state[spi_num].slave_count || tx_data == NULL || len == 0)
 		return 0;
 
-	spi_state[spi_num].current_slave = slave_num;
+	SPIState_t *st = &spi_state[spi_num];
+	st->current_slave = slave_num;
+	st->rx_expected = 0;
+	st->done_flag = done_flag;
+	if (done_flag != NULL)
+		*done_flag = false;
 
 	uint8_t queued = 0;
 	for (size_t i = 0; i < len; i++) {
-		if (!_buf_push(&spi_state[spi_num].tx_buf, tx_data[i]))
+		if (!_buf_push(&st->tx_buf, tx_data[i]))
 			break;
 		queued++;
 	}
 	if (queued > 0) {
-		spi_state[spi_num].tx_pending = true;
-		// rx_pending stays whatever it was — don't touch it
+		st->total_remaining = queued;
+		st->tx_pending = true;
 		spi_ptrs[spi_num]->RSER |= SPI_RSER_TFFF_RE_MASK;
 	}
 	return queued;
 }
 
-/**
- * @brief Queues to transfer buffer to send to slave. Non blocking
- * @param spi_num spi mod
- * @param slave_num Selected slave
- * @param rx_buf Reception buffer
- * @param len Desired len to receive. If there are less that desired len only the available bytes are received from
- * buf
- * @note If there are less
- * @returns Number of bytes efectively read into buffer
+/*
+ * @brief Send instruction bytes then clock in response bytes, CS held throughout.
+		  Non-blocking since ISR sets *done_flag when all rx_len bytes are stored
+ *        Retrieve data afterwards with spi_drv_read()!!
+ * @returns bytes queued into TX buffer, 0 on error.
+ */
+uint8_t spi_drv_transact(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data, size_t tx_len, size_t rx_len,
+						 volatile bool *done_flag) {
+	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active)
+		return 0;
+	if (slave_num >= spi_state[spi_num].slave_count)
+		return 0;
+	if (tx_data == NULL || tx_len == 0)
+		return 0;
+
+	SPIState_t *st = &spi_state[spi_num];
+	st->current_slave = slave_num;
+	st->rx_expected = (uint8_t) rx_len;
+	st->total_remaining = (uint8_t) (tx_len + rx_len);
+	st->done_flag = done_flag;
+	if (done_flag != NULL)
+		*done_flag = false;
+
+	uint8_t queued = 0;
+	for (size_t i = 0; i < tx_len; i++) {
+		if (!_buf_push(&st->tx_buf, tx_data[i]))
+			break;
+		queued++;
+	}
+	if (queued > 0) {
+		st->tx_pending = true;
+		spi_ptrs[spi_num]->RSER |= SPI_RSER_TFFF_RE_MASK;
+	}
+	return queued;
+}
+
+/*
+ * @brief Copy len bytes from RX SW buffer into rx_buf.
+ *        Call after done_flag is set. Falls back to draining HW FIFO if needed.
+ * @returns true if len bytes were available and copied.
  */
 bool spi_drv_read(uint8_t spi_num, uint8_t slave_num, uint8_t *rx_buf, size_t len) {
 	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active)
@@ -233,15 +281,11 @@ bool spi_drv_read(uint8_t spi_num, uint8_t slave_num, uint8_t *rx_buf, size_t le
 
 	SPIState_t *st = &spi_state[spi_num];
 
-	// not enough in SW buffer , try to pull from HW FIFO before giving up
 	if (st->rx_buf.count < len) {
-		_spi_drain_rx_fifo(spi_num);
+		_spi_drain_rx_fifo(spi_num); // rescue bytes still in HW FIFO
 	}
-
-	// check again after draining
-	if (st->rx_buf.count < len) {
+	if (st->rx_buf.count < len)
 		return false;
-	}
 
 	for (size_t i = 0; i < len; i++) {
 		_buf_pop(&st->rx_buf, &rx_buf[i]);
@@ -249,58 +293,23 @@ bool spi_drv_read(uint8_t spi_num, uint8_t slave_num, uint8_t *rx_buf, size_t le
 	return true;
 }
 
-// @todo
-// bool spi_drv_write_read(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data, uint8_t *rx_buf, size_t len);
-
 /**
- * @brief Number of free bytes available in tx buffer
+ * @brief Number of bytes in use in tx buffer
  *
  */
-uint8_t spi_drv_free_txt_buf(uint8_t spi_num) {
-	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active) {
+uint8_t spi_drv_tx_busy(uint8_t spi_num) {
+	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active)
 		return 0;
-	}
-	// TXCTR holds number of entriesin tx fifo
-	uint8_t hw_used = (uint8_t) ((spi_ptrs[spi_num]->SR & SPI_SR_TXCTR_MASK) >> SPI_SR_TXCTR_SHIFT);
-	uint8_t sw_used = spi_state[spi_num].tx_buf.count;
-	return (sw_used) + (hw_used); // free SW slots ++ free HW FIFO slots
+	uint8_t hw = (uint8_t) ((spi_ptrs[spi_num]->SR & SPI_SR_TXCTR_MASK) >> SPI_SR_TXCTR_SHIFT);
+	return spi_state[spi_num].tx_buf.count + hw;
 }
 
-/**
- * @brief Number of bytes available to read from RX software buffer + hw  RX FIFO.
- */
-uint8_t spi_drv_free_rcv_buf(uint8_t spi_num) {
-	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active) {
+/* @brief Bytes available to read (SW RX buffer + HW RX FIFO). */
+uint8_t spi_drv_rx_available(uint8_t spi_num) {
+	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active)
 		return 0;
-	}
-	// RXCTR holds number of entries in rx fifo
-	uint8_t hw_avail = (uint8_t) ((spi_ptrs[spi_num]->SR & SPI_SR_RXCTR_MASK) >> SPI_SR_RXCTR_SHIFT);
-	uint8_t sw_avail = spi_state[spi_num].rx_buf.count;
-	return sw_avail + hw_avail; // total bytes readable right now
-}
-
-/**
- * @brief Allows reception of data from slave
- * @param spi_num spi module
- * @param slave_num Selected slave
- **/
-void spi_drv_allow_read(uint8_t spi_num, uint8_t slave_num) {
-	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active || !(spi_state[spi_num].slave_count > slave_num)) {
-		return;
-	}
-	spi_state[spi_num].rx_pending = true;
-}
-
-/**
- * @brief Stops reception of data from slave (incoming bytes are discarded)
- * @param spi_num spi module
- * @param slave_num Selected slave
- **/
-void spi_drv_notallow_read(uint8_t spi_num, uint8_t slave_num) {
-	if (spi_num >= SPI_COUNT || !spi_state[spi_num].active || !(spi_state[spi_num].slave_count > slave_num)) {
-		return;
-	}
-	spi_state[spi_num].rx_pending = false;
+	uint8_t hw = (uint8_t) ((spi_ptrs[spi_num]->SR & SPI_SR_RXCTR_MASK) >> SPI_SR_RXCTR_SHIFT);
+	return spi_state[spi_num].rx_buf.count + hw;
 }
 
 /*****************************************INTERRUPTS  ROUTINES******************************************/
@@ -310,36 +319,70 @@ static void _spi_irq_handler(uint8_t spi_num) {
 	uint32_t sr = spi->SR;
 	SPIState_t *st = &spi_state[spi_num];
 
-	// RX
+	//  RX
 	if (sr & SPI_SR_RFDF_MASK) {
-		spi->SR = SPI_SR_RFDF_MASK; // clear w1c FIRST
-		while (spi->SR & SPI_SR_RXCTR_MASK) {
+		spi->SR = SPI_SR_RFDF_MASK; // w1c — clear before draining
+		uint8_t count = (uint8_t) ((spi->SR & SPI_SR_RXCTR_MASK) >> SPI_SR_RXCTR_SHIFT);
+		while (count--) {
 			uint8_t byte = (uint8_t) (spi->POPR);
-			if (st->rx_pending) {
-				_buf_push(&st->rx_buf, byte); // store if read was requested
+			if (st->rx_expected > 0) {
+				_buf_push(&st->rx_buf, byte);
+				st->rx_expected--;
+
+				// notify done
+				if (st->rx_expected == 0 && st->done_flag != NULL) {
+					*st->done_flag = true;
+				}
 			}
-			// discard
+			// else is echo from TX only ,discard
 		}
 	}
-	// TX
+
+	//  TX: fill HW FIFO, CONT=1 on all but last byte of transaction
 	if (sr & SPI_SR_TFFF_MASK) {
-		spi->SR = SPI_SR_TFFF_MASK; // clear w1c FIRST
 		uint8_t byte;
-		while (((spi->SR & SPI_SR_TXCTR_MASK) >> SPI_SR_TXCTR_SHIFT) < 4) {
-			if (st->tx_pending && _buf_pop(&st->tx_buf, &byte)) {
-				// real data to send
-				spi->PUSHR = SPI_PUSHR_PCS(1U << st->current_slave) | SPI_PUSHR_TXDATA(byte);
-			} else if (st->rx_pending && st->rx_buf.count < SPI_BUFF_SIZE) {
-				// otherwise push dummy to generate clock
-				spi->PUSHR = SPI_PUSHR_PCS(1U << st->current_slave) | SPI_PUSHR_TXDATA(0xFF);
-			} else {
+		uint8_t pushed = 0;
+
+		while (((spi->SR & SPI_SR_TXCTR_MASK) >> SPI_SR_TXCTR_SHIFT) < SPI_HW_FIFO_DEPTH) {
+			bool has_real = st->tx_pending && _buf_pop(&st->tx_buf, &byte);
+			bool need_dummy = !has_real && (st->rx_expected > 0);
+
+			if (!has_real && !need_dummy)
 				break;
+
+			if (!has_real)
+				byte = 0xFF; // dummy byte to clock in RX response
+
+			// st->total_remaining--;
+			//  drop CONT on the very last byte to release CS
+			// uint32_t cont = (st->total_remaining > 0) ? SPI_PUSHR_CONT_MASK : 0U;
+			bool more_frames = (st->tx_buf.count > 0) || (st->rx_expected > 1);
+
+			uint32_t cont = more_frames ? SPI_PUSHR_CONT_MASK : 0U;
+
+			if (st->total_remaining > 0) {
+				st->total_remaining--;
 			}
+
+			spi->PUSHR = cont | SPI_PUSHR_PCS(1U << st->current_slave) | SPI_PUSHR_TXDATA(byte);
+			pushed++;
 		}
 
-		// disable TFFF if nothing left to drive
-		if (st->tx_buf.count == 0 && !st->rx_pending) {
+		// clear TFFF only after writing to FIFO
+		if (pushed > 0) {
+			spi->SR = SPI_SR_TFFF_MASK;
+		}
+
+		if (st->tx_buf.count == 0) {
 			st->tx_pending = false;
+		}
+
+		// nothing left to drive: disable TFFF
+		// for write-only also set done_flag here
+		if (!st->tx_pending && st->rx_expected == 0) {
+			if (st->done_flag != NULL && !(*st->done_flag)) {
+				*st->done_flag = true; // write-only completion
+			}
 			spi->RSER &= ~SPI_RSER_TFFF_RE_MASK;
 		}
 	}

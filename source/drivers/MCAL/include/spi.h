@@ -20,60 +20,41 @@
 bool spi_drv_init(uint8_t spi_num, uint32_t baud);
 
 /*
- * @brief Initialize a device in spi bus.
- * @returns The slave number, or -1 if an error ocurred
+ * @brief Initialize a device in spi bus. Slaves supported depends on module.
+ * @returns The slave number, or -1 if an error ocurred.
  */
-uint8_t spi_drv_add_slave(uint8_t spi_num);
+int8_t spi_drv_add_slave(uint8_t spi_num);
 
 /**
- * @brief Queues to transfer buffer to send to slave. Non blocking
+ * @brief TX only: Queues to transfer buffer to send to slave. Non blocking. CS held low for entire len bytes via CONT.
  * @param spi_num Spi module
  * @param slave_num Selected slave
- * @returns Number of bytes efectively queued into buffer. -1 on error
+ * @param done_flag Flag that signals write over
+ * @returns Number of bytes efectively queued into buffer. 0 on error
  */
-uint8_t spi_drv_write(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data, size_t len);
+uint8_t spi_drv_write(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data, size_t len, volatile bool *done_flag);
 
-/**
- * @brief Queues to transfer buffer to send to slave. Non blocking
- * @param spi_num spi mod
- * @param slave_num Selected slave
- * @param rx_buf Reception buffer
- * @param len Desired len to receive. If there are less that desired len only the available bytes are received from buf
- * @note If there are less
- * @returns Number of bytes efectively read into buffer
+/*
+ * @brief Send instruction bytes then clock in response bytes, CS held throughout.
+		  Non-blocking since ISR sets *done_flag when all rx_len bytes are stored
+ *        Retrieve data afterwards with spi_drv_read()!!
+ * @returns bytes queued into TX buffer, 0 on error.
+ */
+uint8_t spi_drv_transact(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data, size_t tx_len, size_t rx_len,
+						 volatile bool *done_flag);
+
+/*
+ * @brief Copy len bytes from RX SW buffer into rx_buf.
+ *        Call after done_flag is set. Falls back to draining HW FIFO if needed.
+ * @returns true if len bytes were available and copied.
  */
 bool spi_drv_read(uint8_t spi_num, uint8_t slave_num, uint8_t *rx_buf, size_t len);
-
-
 /**
-* @brief Allows reception of data from slave 
-* @param spi_num spi module
-* @param slave_num Selected slave
-**/
-void spi_drv_allow_read(uint8_t spi_num, uint8_t slave_num);
-
-/**
-* @brief Stops reception of data from slave (incoming bytes are discarded)
-* @param spi_num spi module
-* @param slave_num Selected slave
-**/
-void spi_drv_notallow_read(uint8_t spi_num, uint8_t slave_num);
-
-
-// @todo
-// bool spi_drv_write_read(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data, uint8_t *rx_buf, size_t len);
-
-/**
- * @brief Number of free bytes in transmit buffer
- * @param spi_num The spi module number
+ * @brief Number of bytes in use in tx buffer
  *
  */
-uint8_t spi_drv_free_txt_buf(uint8_t spi_num);
+uint8_t spi_drv_tx_busy(uint8_t spi_num);
 
-/**
- * @brief Number of bytes available to read from RX software buffer + hw  RX FIFO.
- * @param spi_num The spi module number
- */
-uint8_t spi_drv_free_rcv_buf(uint8_t spi_num);
-
+/* @brief Bytes available to read (SW RX buffer + HW RX FIFO). */
+uint8_t spi_drv_rx_available(uint8_t spi_num);
 #endif /* _SPI_H_ */
