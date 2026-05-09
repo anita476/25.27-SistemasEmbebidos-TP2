@@ -5,8 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define SPI_TX_BUF_SIZE 64U
-#define SPI_RX_BUF_SIZE 64U
+#define SPI_BUFF_SIZE 64U
 #define SPI_DUMMY_BYTE 0xFFU
 
 /*
@@ -44,6 +43,22 @@ uint8_t spi_drv_write(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data
  * @returns Number of bytes efectively read into buffer
  */
 bool spi_drv_read(uint8_t spi_num, uint8_t slave_num, uint8_t *rx_buf, size_t len);
+
+
+/**
+* @brief Allows reception of data from slave 
+* @param spi_num spi module
+* @param slave_num Selected slave
+**/
+void spi_drv_allow_read(uint8_t spi_num, uint8_t slave_num);
+
+/**
+* @brief Stops reception of data from slave (incoming bytes are discarded)
+* @param spi_num spi module
+* @param slave_num Selected slave
+**/
+void spi_drv_notallow_read(uint8_t spi_num, uint8_t slave_num);
+
 
 // @todo
 // bool spi_drv_write_read(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data, uint8_t *rx_buf, size_t len);

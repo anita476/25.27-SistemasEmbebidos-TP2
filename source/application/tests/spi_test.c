@@ -77,6 +77,8 @@ static uint8_t test_add_slave(void) {
 	int8_t slave = spi_drv_add_slave(0);
 	_assert(slave == 0, "first slave returns index 0");
 
+	spi_drv_allow_read( 0, slave); // always allow reading for loopback test!
+
 	int8_t bad = spi_drv_add_slave(2); // SPI2 not initialized
 	_assert(bad == -1, "add_slave on uninit spi rejected");
 

@@ -6,7 +6,7 @@
 #define SPI_HAL_DEFAULT_BAUDRATE 1000000UL // 1 MHz
 #define SPI_COUNT 3
 #define SPI_MAX_DEVICE_COUNT 6 // not all are implemented in all spi modules
-#define SPI_BUFF_SIZE 32
+
 
 typedef struct {
 	pin_t pcs;
@@ -24,7 +24,7 @@ typedef struct {
 } SPIConfig_t;
 
 typedef struct {
-	uint8_t buf[SPI_TX_BUF_SIZE];
+	uint8_t buf[SPI_BUFF_SIZE];
 	volatile uint8_t head;
 	volatile uint8_t tail;
 	volatile uint8_t count; // in use!
@@ -280,6 +280,27 @@ uint8_t spi_drv_free_rcv_buf(uint8_t spi_num) {
 	return sw_avail + hw_avail; // total bytes readable right now
 }
 
+/**
+* @brief Allows reception of data from slave 
+* @param spi_num spi module
+* @param slave_num Selected slave
+**/
+void spi_drv_allow_read(uint8_t spi_num, uint8_t slave_num){
+	if(spi_num >= SPI_COUNT || !spi_state[spi_num].active|| !(spi_state[spi_num].slave_count > slave_num)){return;}
+	spi_state[spi_num].rx_pending = true;
+}
+
+/**
+* @brief Stops reception of data from slave (incoming bytes are discarded)
+* @param spi_num spi module
+* @param slave_num Selected slave
+**/
+void spi_drv_notallow_read(uint8_t spi_num, uint8_t slave_num){
+	if(spi_num >= SPI_COUNT || !spi_state[spi_num].active|| !(spi_state[spi_num].slave_count > slave_num)){return;}
+	spi_state[spi_num].rx_pending =false;
+
+}
+
 /*****************************************INTERRUPTS  ROUTINES******************************************/
 
 static void _spi_irq_handler(uint8_t spi_num) {
@@ -306,7 +327,7 @@ static void _spi_irq_handler(uint8_t spi_num) {
 			if (st->tx_pending && _buf_pop(&st->tx_buf, &byte)) {
 				// real data to send
 				spi->PUSHR = SPI_PUSHR_PCS(1U << st->current_slave) | SPI_PUSHR_TXDATA(byte);
-			} else if (st->rx_pending && st->rx_buf.count < SPI_RX_BUF_SIZE) {
+			} else if (st->rx_pending && st->rx_buf.count < SPI_BUFF_SIZE) {
 				// otherwise push dummy to generate clock
 				spi->PUSHR = SPI_PUSHR_PCS(1U << st->current_slave) | SPI_PUSHR_TXDATA(0xFF);
 			} else {
@@ -393,11 +414,11 @@ static void _spi_drain_rx_fifo(uint8_t spi_num) {
 /****************************BUFFER HELPERS *****************************/
 
 static bool _buf_push(SPIRingBuff_t *buf, uint8_t byte) {
-	if (buf->count >= SPI_TX_BUF_SIZE) {
+	if (buf->count >= SPI_BUFF_SIZE) {
 		return false; // full
 	}
 	buf->buf[buf->head] = byte;
-	buf->head = (buf->head + 1) % SPI_TX_BUF_SIZE;
+	buf->head = (buf->head + 1) % SPI_BUFF_SIZE;
 	buf->count++;
 	return true;
 }
@@ -407,7 +428,7 @@ static bool _buf_pop(SPIRingBuff_t *buf, uint8_t *byte) {
 		return false; // empty
 	}
 	*byte = buf->buf[buf->tail];
-	buf->tail = (buf->tail + 1) % SPI_TX_BUF_SIZE;
+	buf->tail = (buf->tail + 1) % SPI_BUFF_SIZE;
 	buf->count--;
 	return true;
 }
