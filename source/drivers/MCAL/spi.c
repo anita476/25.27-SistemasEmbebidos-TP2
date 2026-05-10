@@ -321,7 +321,7 @@ static void _spi_irq_handler(uint8_t spi_num) {
 
 	//  RX
 	if (sr & SPI_SR_RFDF_MASK) {
-		spi->SR = SPI_SR_RFDF_MASK; // w1c — clear before draining
+		spi->SR = SPI_SR_RFDF_MASK; // w1c
 		uint8_t count = (uint8_t) ((spi->SR & SPI_SR_RXCTR_MASK) >> SPI_SR_RXCTR_SHIFT);
 		while (count--) {
 			uint8_t byte = (uint8_t) (spi->POPR);
@@ -338,7 +338,7 @@ static void _spi_irq_handler(uint8_t spi_num) {
 		}
 	}
 
-	//  TX: fill HW FIFO, CONT=1 on all but last byte of transaction
+	//  TX
 	if (sr & SPI_SR_TFFF_MASK) {
 		uint8_t byte;
 		uint8_t pushed = 0;
@@ -378,7 +378,6 @@ static void _spi_irq_handler(uint8_t spi_num) {
 		}
 
 		// nothing left to drive: disable TFFF
-		// for write-only also set done_flag here
 		if (!st->tx_pending && st->rx_expected == 0) {
 			if (st->done_flag != NULL && !(*st->done_flag)) {
 				*st->done_flag = true; // write-only completion

@@ -8,6 +8,7 @@
  * INCLUDE HEADER FILES
  ******************************************************************************/
 
+#include "../drivers/HAL/include/board_led.h"
 #include "../drivers/HAL/include/switch.h"
 #include "../drivers/HAL/include/timer.h"
 #include "../drivers/MCAL/include/uart.h"
@@ -41,16 +42,19 @@ static EVENT App_CaptureEvent();
 /* interrupts are disabled at this point*/
 void App_Init(void) {
 	// timer_drv_init();
-	// FSM_InitTable();
-
+	//  FSM_InitTable();
+	board_led_drv_init();
 	id = UART_drv_instance_init(PORTNUM2PIN(PB, 16), PORTNUM2PIN(PB, 17), BAUDRATE);
 	// initial state
 	g_app_ctx.current_state = FSM_GetInitState();
 }
-static uint8_t offset = 0;
+
 /* Función que se llama constantemente en un ciclo infinito */
 void App_Run(void) {
 	spi_test_app(id);
+	board_led_drv_state(GREEN, true);
+	// board_led_drv_state(RED, true);
+	board_led_drv_state(BLUE, true);
 	while (1) {
 		// timer_drv_update(); /* must be called every iteration */
 
