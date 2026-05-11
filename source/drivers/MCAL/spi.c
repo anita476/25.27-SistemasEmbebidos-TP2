@@ -282,7 +282,9 @@ bool spi_drv_read(uint8_t spi_num, uint8_t slave_num, uint8_t *rx_buf, size_t le
 	SPIState_t *st = &spi_state[spi_num];
 
 	if (st->rx_buf.count < len) {
-		_spi_drain_rx_fifo(spi_num); // rescue bytes still in HW FIFO
+		NVIC_DisableIRQ(spi_nvic_ints[spi_num]);
+		_spi_drain_rx_fifo(spi_num);			// rescue bytes still in HW FIFO
+		NVIC_EnableIRQ(spi_nvic_ints[spi_num]); // just in case...
 	}
 	if (st->rx_buf.count < len)
 		return false;

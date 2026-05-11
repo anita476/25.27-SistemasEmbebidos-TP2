@@ -39,6 +39,8 @@ uint8_t spi_drv_write(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data
 		  Non-blocking since ISR sets *done_flag when all rx_len bytes are stored
  *        Retrieve data afterwards with spi_drv_read()!!
  * @returns bytes queued into TX buffer, 0 on error.
+ * @note OBs!!! Está hecho así así funciona para loopback + para cuando la transmisión es realmente full duplex.
+ * 		 EVENTUALLY ADD FLAG TO ONLY SAVE TRUE RX TO BUFF!!
  */
 uint8_t spi_drv_transact(uint8_t spi_num, uint8_t slave_num, const uint8_t *tx_data, size_t tx_len, size_t rx_len,
 						 volatile bool *done_flag);

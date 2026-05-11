@@ -26,3 +26,9 @@ TiltNetworkTool-1.0.0/.idea
 
 # logs 
 *.log
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/modules.xml
+.idea/vcs.xml
+.idea/25.27-SistemasEmbebidos-TP2.iml
+.idea/.gitignore
+.idea/

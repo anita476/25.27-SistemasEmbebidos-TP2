@@ -9,6 +9,7 @@
  ******************************************************************************/
 
 #include "../drivers/HAL/include/board_led.h"
+#include "../drivers/HAL/include/communication.h"
 #include "../drivers/HAL/include/switch.h"
 #include "../drivers/HAL/include/timer.h"
 #include "../drivers/MCAL/include/uart.h"
@@ -29,8 +30,8 @@ AppContext_t g_app_ctx = {
 	.current_state = NULL, // set after initing tabl
 };
 
-static const char MSG[] = "The quick brown fox jumps over the lazy dog\r\n";
 static uint32_t id;
+static CommLedCmd_t out_cmd;
 /*******************************************************************************
  *******************************************************************************
 						GLOBAL FUNCTION DEFINITIONS
@@ -44,18 +45,29 @@ void App_Init(void) {
 	// timer_drv_init();
 	//  FSM_InitTable();
 	board_led_drv_init();
-	id = UART_drv_instance_init(PORTNUM2PIN(PB, 16), PORTNUM2PIN(PB, 17), BAUDRATE);
-	// initial state
+	communication_drv_init();
+	// id = UART_drv_instance_init(PORTNUM2PIN(PB, 16), PORTNUM2PIN(PB, 17), BAUDRATE);
+	//  initial state
 	g_app_ctx.current_state = FSM_GetInitState();
 }
 
 /* Función que se llama constantemente en un ciclo infinito */
 void App_Run(void) {
-	spi_test_app(id);
+	// spi_test_app(id);
 	board_led_drv_state(GREEN, true);
 	// board_led_drv_state(RED, true);
 	board_led_drv_state(BLUE, true);
+	// communication_drv_send_angle_ascii(COMM_ANGLE_ORIENTATION, "-134", 4);
+
 	while (1) {
+		if (communication_drv_receive_led_cmd(&out_cmd)) {
+			// @todo should probably have a better driver !!
+			if (out_cmd.group == CURRENT_GROUP_ID) {
+				board_led_drv_state(RED, out_cmd.red);
+				board_led_drv_state(GREEN, out_cmd.green);
+				board_led_drv_state(BLUE, out_cmd.blue);
+			}
+		}
 		// timer_drv_update(); /* must be called every iteration */
 
 		// bool res = uart_test(id);
