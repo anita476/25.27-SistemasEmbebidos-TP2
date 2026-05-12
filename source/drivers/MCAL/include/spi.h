@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define SPI_BUFF_SIZE 64U
+#define SPI_BUFF_SIZE 255U
 #define SPI_DUMMY_BYTE 0xFFU
 
 /*

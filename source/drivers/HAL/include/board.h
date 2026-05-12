@@ -35,9 +35,6 @@
 #define SW_ACTIVE LOW
 #define SW_INPUT_TYPE INPUT_PULLUP // en realidad para sw3 no hace falta, para sw2 SI
 
-#define SPI_NUM 0
-#define SPI_BAUDRATE 1000000UL
-
 #define PIN_CAN_INT PORTNUM2PIN(PC, 4) // PTC4 @todo revise later
 
 #endif /* _BOARD_H_ */
