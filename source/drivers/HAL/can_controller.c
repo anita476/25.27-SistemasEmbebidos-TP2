@@ -6,6 +6,8 @@
 #include "include/board.h"
 #include <string.h>
 
+/***********************************+*/
+#define CAN_MSG_ID 0x101U
 /** SETUP ********************************************************* */
 #define CAN_SPI_NUM 0
 #define CAN_SPI_BAUDRATE 1000000UL
@@ -66,6 +68,24 @@
 #define MCP_CANCTRL_REQOP_MASK 0xE0U
 #define MCP_MODE_NORMAL 0x00U
 #define MCP_MODE_CONFIG 0x80U
+
+/**********************TRANSMISSION BUFFER REGISTERS */
+#define TX_BUFF_COUNT 3
+#define TX_DATA_BYTES 8U
+
+typedef struct {
+	uint8_t TXBCtrlReg;
+	uint8_t TXBSIDHReg;
+	uint8_t TXBSIDLReg; /* we dont use EID0,EID8 */
+	uint8_t TXBEID0Reg;
+	uint8_t TXBEID8Reg;
+	uint8_t TXBDLCReg;
+	uint8_t TXBDataReg[TX_DATA_BYTES];
+} TxRegsBufMM_t;
+static TxRegsBufMM_t tx_registers[TX_BUFF_COUNT] = {
+	{0x30U, 0x31U, 0x32U, 0x33U, 0x34U, 0x35U, {0x36U, 0x37U, 0x38U, 0x39U, 0x3AU, 0x3BU, 0x3CU, 0x3DU}},
+	{0x40U, 0x41U, 0x42U, 0x43U, 0x44U, 0x45U, {0x46U, 0x47U, 0x48U, 0x49U, 0x4AU, 0x4BU, 0x4CU, 0x4DU}},
+	{0x50U, 0x51U, 0x52U, 0x53U, 0x54U, 0x55U, {0x56U, 0x57U, 0x58U, 0x59U, 0x5AU, 0x5BU, 0x5CU, 0x5DU}}};
 
 // FORWARD DECS !
 static bool reg_write_many(uint8_t spi_num, uint8_t slave_num, uint8_t addr, const uint8_t *data, uint8_t len);
@@ -168,9 +188,10 @@ bool can_controller_drv_init() {
 	uint8_t stat = 0U;
 	if (!reg_read(CAN_SPI_NUM, slave_num, MCP_REG_CANSTAT, &stat) ||
 		(stat & MCP_CANCTRL_REQOP_MASK) != (uint8_t) MCP_MODE_NORMAL) {
-		// UART_data_transmit(uart_id, (uint8_t *) "can mode failed", 16); // @todo take out
 		return false;
 	}
+	UART_data_transmit(uart_id, "Stat:", 6); // @todo take out
+	UART_data_transmit(uart_id, &stat, 1);	 // @todo take out
 	can_initialized = true;
 
 	// set up interrupt gpio !
@@ -186,6 +207,33 @@ bool can_controller_drv_init() {
 		return false;
 	}
 	UART_data_transmit(uart_id, (uint8_t *) "can setup done", 15); // @todo take out
+	return true;
+}
+
+bool can_send(const uint8_t *data, uint8_t len) {
+	if (len > 8U)
+		return false;
+
+	uint8_t frame[13] = {0};						  // SIDH, SIDL, EID8, EID0, DLC, D0..D7
+	frame[0] = (uint8_t) (CAN_MSG_ID >> 3);			  // SIDH: ID[10:3]
+	frame[1] = (uint8_t) ((CAN_MSG_ID & 0x07U) << 5); // SIDL: ID[2:0] in bits[7:5], EXIDE=0
+	frame[2] = 0x00U;								  // EID8 unused
+	frame[3] = 0x00U;								  // EID0 unused
+	frame[4] = len & 0x0FU;							  // DLC, RTR=0
+	memcpy(&frame[5], data, len);
+
+	// write frame registers
+	if (!reg_write_many(CAN_SPI_NUM, slave_num, tx_registers[0].TXBSIDHReg, frame, 5U + len))
+		return false;
+
+	// request transmission via RTS
+	volatile bool done = false;
+	uint8_t rts = MCP_RTS_TX0;
+	if (spi_drv_write(CAN_SPI_NUM, slave_num, &rts, 1U, &done) == 0U)
+		return false;
+	wait_done(&done);
+	delay_ms(2); // let the frame clock out before returning
+
 	return true;
 }
 

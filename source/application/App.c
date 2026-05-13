@@ -77,8 +77,9 @@ void App_Run(void) {
 		if (timer_drv_expired(id)) {
 			UART_data_transmit(0, (uint8_t *) "2 seconds\r\n", 12);
 			timer_drv_start(id, 2000, TIM_MODE_SINGLESHOT, NULL);
-
 			// send data to can
+			can_send((const uint8_t *) "A", 2);
+
 		}
 		// communication_drv_send_angle_ascii(COMM_ANGLE_ORIENTATION, "+13", 3);
 		//  bool res = uart_test(id);
