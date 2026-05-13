@@ -78,6 +78,8 @@ void can_gpio_irq(void);
 static uint8_t slave_num;
 static bool can_initialized = false;
 static uint32_t uart_id;
+
+static void delay_ms(uint32_t ms);
 /**
  * @brief Initialize the can controller driver. Configures interruptiion pin and comm (spi0)
  * @note COMPLETELY BLOCKING AND NEEDS INTERRUPTS ENABLED
@@ -115,6 +117,8 @@ bool can_controller_drv_init() {
 	volatile bool done = false;
 	if (spi_drv_write(CAN_SPI_NUM, slave_num, &rst, 1U, &done) == 0U)
 		return false;
+	// delay_ms(20);
+
 	wait_done(&done);
 
 	/** Asuming 16MHz osc (?) -> datasheet confirms...
@@ -153,7 +157,6 @@ bool can_controller_drv_init() {
 
 	if (!bit_modify(CAN_SPI_NUM, slave_num, MCP_REG_RXB0CTRL, MCP_RXB_RXM_MASK, MCP_RXB_RXM_ANY))
 		return false;
-
 	if (!bit_modify(CAN_SPI_NUM, slave_num, MCP_REG_RXB1CTRL, MCP_RXB_RXM_MASK, MCP_RXB_RXM_ANY))
 		return false;
 
@@ -226,6 +229,8 @@ static bool bit_modify(uint8_t spi_num, uint8_t slave_num, uint8_t addr, uint8_t
 	uint8_t queued = spi_drv_write(spi_num, slave_num, buf, sizeof(buf), &done);
 	if (queued == 0U)
 		return false;
+
+	// delay_ms(20);
 	wait_done(&done);
 	return true;
 }
@@ -242,6 +247,8 @@ static bool reg_read(uint8_t spi_num, uint8_t slave_num, uint8_t addr, uint8_t *
 	uint8_t queued = spi_drv_transact(spi_num, slave_num, tx, sizeof(tx), total_rx, &done);
 	if (queued == 0U)
 		return false;
+
+	// delay_ms(20);
 	wait_done(&done);
 
 	uint8_t dummy[2];
@@ -249,4 +256,11 @@ static bool reg_read(uint8_t spi_num, uint8_t slave_num, uint8_t addr, uint8_t *
 		return false;
 
 	return spi_drv_read(spi_num, slave_num, out, 1U);
+}
+
+// @todo take out
+static void delay_ms(uint32_t ms) {
+	volatile uint32_t cycles = ms * 15000U;
+	while (cycles--)
+		;
 }
