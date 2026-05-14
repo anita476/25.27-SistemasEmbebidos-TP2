@@ -51,11 +51,17 @@
 #define MCP_REG_TXB1CTRL 0x40U
 #define MCP_REG_TXB2CTRL 0x50U
 
+// @todo add the other buffers
+#define MCP_REG_TXB0SIDH 0x31U
+#define MCP_REG_RXB0SIDH 0x61U
+#define MCP_REG_RXB1SIDH 0x71U
+
 /*********** INTERRUPTS BITS enabled IN CANINTE (can interrupt enables) */
 /*   7                                          0 */
 /* MERRE WAKIE ERRIE TX2IE TX1IE TX0IE RX1IE RX0IE*/
 #define MCP_INT_RX0 (1U << 0)
 #define MCP_INT_RX1 (1U << 1)
+#define MCP_INT_TX0 (1U << 2) /* enabled only while a TX occcurring */
 #define MCP_INT_ERR (1U << 5)
 #define MCP_INT_MERR (1U << 7)
 
@@ -68,6 +74,9 @@
 #define MCP_CANCTRL_REQOP_MASK 0xE0U
 #define MCP_MODE_NORMAL 0x00U
 #define MCP_MODE_CONFIG 0x80U
+
+#define MCP_TXREQ (1U << 3)
+#define MCP_TXERR (1U << 4)
 
 /**********************TRANSMISSION BUFFER REGISTERS */
 #define TX_BUFF_COUNT 3
@@ -87,19 +96,79 @@ static TxRegsBufMM_t tx_registers[TX_BUFF_COUNT] = {
 	{0x40U, 0x41U, 0x42U, 0x43U, 0x44U, 0x45U, {0x46U, 0x47U, 0x48U, 0x49U, 0x4AU, 0x4BU, 0x4CU, 0x4DU}},
 	{0x50U, 0x51U, 0x52U, 0x53U, 0x54U, 0x55U, {0x56U, 0x57U, 0x58U, 0x59U, 0x5AU, 0x5BU, 0x5CU, 0x5DU}}};
 
+/*
+ * RX FRAME: SIDH SIDL EID8 EID0 DLC D0..D7
+ **/
+#define RX_FRAME_HEADER 5U
+#define RX_FRAME_MAX (RX_FRAME_HEADER + 8U)
+
+typedef enum {
+	TX_IDLE,
+	TX_WAIT_FRAME_WRITE,  /* writing SIDH..data over SPI */
+	TX_WAIT_INTE_ENABLE,  /* enabling TX0IE */
+	TX_WAIT_RTS,		  /* RTS command clocked out */
+	TX_WAIT_BUS,		  /* frame on bus, waiting for INT  (TX0IF) */
+	TX_WAIT_CTRL_READ,	  /* reading TXB0CTRL to check TXERR */
+	TX_WAIT_INTE_DISABLE, /* disabling TX0IE */
+	TX_WAIT_INTF_CLEAR,	  /* clearing TX0IF */
+} TXState_t;
+
+/* =========================================================================
+ * IRQ / RX STATE MACHINE
+ * ========================================================================= */
+typedef enum {
+	IRQ_IDLE,
+	IRQ_WAIT_INTF_READ,
+	IRQ_WAIT_RX0_READ,
+	IRQ_WAIT_RX1_READ,
+	IRQ_WAIT_INTF_CLEAR,
+} IRQState_t;
+
+static uint8_t slave_num;
+static bool can_initialized = false;
+
+/* spi falg !*/
+static volatile bool spi_done = false;
+
+/* tx */
+static TXState_t tx_state = TX_IDLE;
+static void (*tx_done_cb)(bool) = NULL;
+static uint8_t tx_frame[13];
+static uint8_t tx_ctrl_val;
+static bool tx_ok;
+
+/* irq/rx */
+static IRQState_t irq_state = IRQ_IDLE;
+static volatile bool irq_pending = false;
+static uint8_t irq_intf_val;
+static uint8_t rx_buf[RX_FRAME_MAX];
+static void (*rx_cb)(const uint8_t *data, uint8_t dlc) = NULL;
+
+/*  SPI temp buffers */
+static uint8_t spi_tx_buf[SPI_BUFF_SIZE];
+static uint8_t spi_rx_dummy[2];
+
 // FORWARD DECS !
 static bool reg_write_many(uint8_t spi_num, uint8_t slave_num, uint8_t addr, const uint8_t *data, uint8_t len);
 static bool bit_modify(uint8_t spi_num, uint8_t slave_num, uint8_t addr, uint8_t mask, uint8_t data);
 static bool reg_read(uint8_t spi_num, uint8_t slave_num, uint8_t addr, uint8_t *out);
 static void wait_done(volatile bool *flag);
 
+static bool start_reg_write(uint8_t addr, const uint8_t *data, uint8_t len);
+static bool start_bit_modify(uint8_t addr, uint8_t mask, uint8_t data);
+static bool start_reg_read(uint8_t addr);
+static bool spi_write_buf(uint8_t *buf, uint8_t len);
+static bool spi_transact_buf(uint8_t *tx, uint8_t tx_len, uint8_t rx_total);
+
+/* state machine processors */
+static void process_tx(void);
+static void process_irq(void);
+static void finish_rx_frame(uint8_t bufidx);
+
 void can_gpio_irq(void);
 
-static uint8_t slave_num;
-static bool can_initialized = false;
 static uint32_t uart_id;
 
-static void delay_ms(uint32_t ms);
 /**
  * @brief Initialize the can controller driver. Configures interruptiion pin and comm (spi0)
  * @note COMPLETELY BLOCKING AND NEEDS INTERRUPTS ENABLED
@@ -116,7 +185,7 @@ bool can_controller_drv_init() {
 	if (!spi_drv_init(CAN_SPI_NUM, CAN_SPI_BAUDRATE)) {
 		return false;
 	}
-	// Use temp signed variable to properly catch -1 error return
+
 	int8_t temp_slave = spi_drv_add_slave(CAN_SPI_NUM);
 	if (temp_slave < 0) {
 		return false;
@@ -137,11 +206,11 @@ bool can_controller_drv_init() {
 	volatile bool done = false;
 	if (spi_drv_write(CAN_SPI_NUM, slave_num, &rst, 1U, &done) == 0U)
 		return false;
-	// delay_ms(20);
 
 	wait_done(&done);
 
 	/** Asuming 16MHz osc (?) -> datasheet confirms...
+	 * THIS IS WRONG !!!
 	 * CNF1:
 	 *       SJW=00 (1 TQ fijo) , BRP=000111 (7 so TQ = 2×(7+1)/16MHz = 1us)
 	 * CNF2:
@@ -149,7 +218,18 @@ bool can_controller_drv_init() {
 	 * CNF3:
 	 *       PHSEG2=001 (2 TQ)
 	 */
-	uint8_t timing[3] = {0x01U, 0xB5U, 0x07U};
+	/* CORRECT IS:
+		/**
+	 * 16 MHz oscillator, 125 kbps, 8 TQ total:
+	 *   TQ  = 2*(BRP+1)/OSC = 2*(7+1)/16MHz = 1 us
+	 *   Seg = SyncSeg(1) + PRSEG(1) + PHSEG1(3) + PHSEG2(3) = 8 TQ -> 1/8us = 125kbps
+	 *   timing[0]-> CNF3 = 0x02  (PHSEG2 = 010 -> 3 TQ)
+	 *   timing[1] -> CNF2 = 0x90  (BTLMODE=1, PHSEG1=010, PRSEG=000)
+	 *   timing[2] -> CNF1 = 0x07  (SJW=00, BRP=000111)
+	 */
+
+	// uint8_t timing[3] = {0x01U, 0xB5U, 0x07U};
+	uint8_t timing[3] = {0x02U, 0x90U, 0x07U};
 	if (!reg_write_many(CAN_SPI_NUM, slave_num, MCP_REG_CNF3, timing, 3U))
 		return false;
 
@@ -210,6 +290,7 @@ bool can_controller_drv_init() {
 	return true;
 }
 
+/**
 bool can_send(const uint8_t *data, uint8_t len) {
 	if (len > 8U)
 		return false;
@@ -232,15 +313,284 @@ bool can_send(const uint8_t *data, uint8_t len) {
 	if (spi_drv_write(CAN_SPI_NUM, slave_num, &rts, 1U, &done) == 0U)
 		return false;
 	wait_done(&done);
-	delay_ms(2); // let the frame clock out before returning
 
 	return true;
 }
+	*/
+/**
+ * @brief Register callback for received CAN frames
+ */
+void can_set_rx_cb(void (*cb)(const uint8_t *data, uint8_t dlc)) {
+	rx_cb = cb;
+}
+
+/**
+ * @brief Queue a CAN frame for transmission (non-blocking).
+ * @return false if driver not ready or a TX is already in progress
+ */
+bool can_send(const uint8_t *data, uint8_t len, void (*on_done)(bool success)) {
+	if (!can_initialized)
+		return false;
+	if (tx_state != TX_IDLE)
+		return false;
+	if (len > 8U)
+		return false;
+
+	tx_done_cb = on_done;
+
+	tx_frame[0] = (uint8_t) (CAN_MSG_ID >> 3);
+	tx_frame[1] = (uint8_t) ((CAN_MSG_ID & 0x07U) << 5);
+	tx_frame[2] = 0x00U;
+	tx_frame[3] = 0x00U;
+	tx_frame[4] = len & 0x0FU;
+	memcpy(&tx_frame[5], data, len);
+
+	if (!start_reg_write(MCP_REG_TXB0SIDH, tx_frame, 5U + len))
+		return false;
+
+	tx_state = TX_WAIT_FRAME_WRITE;
+	return true;
+}
+
+/**
+ * @brief Drive TX and RX state machines. Must be called from main loop!
+ */
+void can_process(void) {
+	/* TX  priority over IRQ */
+	if (tx_state != TX_IDLE && tx_state != TX_WAIT_BUS) {
+		process_tx();
+		return;
+	}
+
+	/* Start IRQ handling only when SPI is free */
+	if (irq_pending && tx_state == TX_IDLE && irq_state == IRQ_IDLE) {
+		irq_pending = false;
+		if (start_reg_read(MCP_REG_CANINTF))
+			irq_state = IRQ_WAIT_INTF_READ;
+	}
+
+	if (irq_state != IRQ_IDLE) {
+		process_irq();
+	}
+}
 
 /*****************************gpio interrupt*************************************/
+
+/**
+ * @brief GPIO ISR — MCP25625 INT pin fell low.
+ *        Sets flag only, work is done in can_process().
+ */
 void can_gpio_irq(void) {
-	;
+	irq_pending = true;
 }
+
+static void process_tx(void) {
+	if (!spi_done)
+		return;
+	spi_done = false;
+
+	switch (tx_state) {
+		case TX_WAIT_FRAME_WRITE:
+			/* enable TX0IE so INT fires when bus TX completes. */
+			if (!start_bit_modify(MCP_REG_CANINTE, MCP_INT_TX0, MCP_INT_TX0))
+				goto tx_error;
+			tx_state = TX_WAIT_INTE_ENABLE;
+			break;
+
+		case TX_WAIT_INTE_ENABLE:
+			spi_tx_buf[0] = MCP_RTS_TX0;
+			if (!spi_write_buf(spi_tx_buf, 1U))
+				goto tx_error;
+			tx_state = TX_WAIT_RTS;
+			break;
+
+		case TX_WAIT_RTS:
+			/* RTS is on the wire. Park here until can_gpio_irq fires TX0IF,
+			 * which process_irq will detect and forward to TX_WAIT_CTRL_READ. */
+			tx_state = TX_WAIT_BUS;
+			break;
+
+		case TX_WAIT_CTRL_READ:
+			/* Returned here by process_irq after TX0IF detected */
+			if (!spi_drv_read(CAN_SPI_NUM, slave_num, spi_rx_dummy, 2U))
+				goto tx_error;
+			if (!spi_drv_read(CAN_SPI_NUM, slave_num, &tx_ctrl_val, 1U))
+				goto tx_error;
+			tx_ok = !(tx_ctrl_val & MCP_TXERR);
+
+			if (!start_bit_modify(MCP_REG_CANINTE, MCP_INT_TX0, 0x00U))
+				goto tx_error;
+			tx_state = TX_WAIT_INTE_DISABLE;
+			break;
+
+		case TX_WAIT_INTE_DISABLE:
+			if (!start_bit_modify(MCP_REG_CANINTF, MCP_INT_TX0, 0x00U))
+				goto tx_error;
+			tx_state = TX_WAIT_INTF_CLEAR;
+			break;
+
+		case TX_WAIT_INTF_CLEAR: {
+			bool result = tx_ok;
+			tx_state = TX_IDLE;
+			if (tx_done_cb)
+				tx_done_cb(result);
+			break;
+		}
+
+		default:
+			break;
+	}
+	return;
+
+tx_error:
+	start_bit_modify(MCP_REG_CANINTE, MCP_INT_TX0, 0x00U); /* best-effort */
+	tx_state = TX_IDLE;
+	if (tx_done_cb)
+		tx_done_cb(false);
+}
+
+static void process_irq(void) {
+	if (!spi_done)
+		return;
+	spi_done = false;
+
+	switch (irq_state) {
+		case IRQ_WAIT_INTF_READ: {
+			if (!spi_drv_read(CAN_SPI_NUM, slave_num, spi_rx_dummy, 2U)) {
+				irq_state = IRQ_IDLE;
+				return;
+			}
+			if (!spi_drv_read(CAN_SPI_NUM, slave_num, &irq_intf_val, 1U)) {
+				irq_state = IRQ_IDLE;
+				return;
+			}
+
+			/* TX0IF: forward to TX state machine to read CTRL and clean up */
+			if (irq_intf_val & MCP_INT_TX0) {
+				tx_state = TX_WAIT_CTRL_READ;
+				if (!start_reg_read(MCP_REG_TXB0CTRL)) {
+					tx_state = TX_IDLE;
+					if (tx_done_cb)
+						tx_done_cb(false);
+				}
+				irq_intf_val &= (uint8_t) ~MCP_INT_TX0;
+				/* TX machine clears TX0IF itself; fall through to handle any RX */
+			}
+
+			if (irq_intf_val & MCP_INT_RX0) {
+				if (!start_reg_read(MCP_REG_RXB0SIDH)) {
+					irq_state = IRQ_IDLE;
+					return;
+				}
+				irq_state = IRQ_WAIT_RX0_READ;
+				return;
+			}
+
+			if (irq_intf_val & MCP_INT_RX1) {
+				if (!start_reg_read(MCP_REG_RXB1SIDH)) {
+					irq_state = IRQ_IDLE;
+					return;
+				}
+				irq_state = IRQ_WAIT_RX1_READ;
+				return;
+			}
+
+			if (irq_intf_val & (MCP_INT_ERR | MCP_INT_MERR)) {
+				/* @todo read EFLG for diagnostics before clearing */
+				if (!start_bit_modify(MCP_REG_CANINTF, MCP_INT_ERR | MCP_INT_MERR, 0x00U)) {
+					irq_state = IRQ_IDLE;
+					return;
+				}
+				irq_state = IRQ_WAIT_INTF_CLEAR;
+				return;
+			}
+
+			irq_state = IRQ_IDLE;
+			break;
+		}
+
+		case IRQ_WAIT_RX0_READ:
+			finish_rx_frame(0U);
+			break;
+		case IRQ_WAIT_RX1_READ:
+			finish_rx_frame(1U);
+			break;
+
+		case IRQ_WAIT_INTF_CLEAR:
+			irq_state = IRQ_IDLE;
+			break;
+
+		default:
+			irq_state = IRQ_IDLE;
+			break;
+	}
+}
+
+static void finish_rx_frame(uint8_t bufidx) {
+	if (!spi_drv_read(CAN_SPI_NUM, slave_num, spi_rx_dummy, 2U)) {
+		irq_state = IRQ_IDLE;
+		return;
+	}
+	if (!spi_drv_read(CAN_SPI_NUM, slave_num, rx_buf, RX_FRAME_MAX)) {
+		irq_state = IRQ_IDLE;
+		return;
+	}
+
+	uint8_t dlc = rx_buf[4] & 0x0FU;
+	if (dlc > 8U)
+		dlc = 8U;
+	if (rx_cb)
+		rx_cb(&rx_buf[5], dlc);
+
+	uint8_t flag = (bufidx == 0U) ? MCP_INT_RX0 : MCP_INT_RX1;
+	if (!start_bit_modify(MCP_REG_CANINTF, flag, 0x00U)) {
+		irq_state = IRQ_IDLE;
+		return;
+	}
+	irq_state = IRQ_WAIT_INTF_CLEAR;
+}
+
+/*
+ * NON-BLOCKING SPI HELPERS
+ *  spi_done set by SPI ISR
+ */
+static bool spi_write_buf(uint8_t *buf, uint8_t len) {
+	spi_done = false;
+	return spi_drv_write(CAN_SPI_NUM, slave_num, buf, len, (bool *) &spi_done) != 0U;
+}
+
+static bool spi_transact_buf(uint8_t *tx, uint8_t tx_len, uint8_t rx_total) {
+	spi_done = false;
+	return spi_drv_transact(CAN_SPI_NUM, slave_num, tx, tx_len, rx_total, (bool *) &spi_done) != 0U;
+}
+
+static bool start_reg_write(uint8_t addr, const uint8_t *data, uint8_t len) {
+	if ((uint8_t) (2U + len) > SPI_BUFF_SIZE)
+		return false;
+	spi_tx_buf[0] = MCP_WRITE;
+	spi_tx_buf[1] = addr;
+	memcpy(&spi_tx_buf[2], data, len);
+	return spi_write_buf(spi_tx_buf, (uint8_t) (2U + len));
+}
+
+static bool start_bit_modify(uint8_t addr, uint8_t mask, uint8_t data) {
+	spi_tx_buf[0] = MCP_BIT_MODIFY;
+	spi_tx_buf[1] = addr;
+	spi_tx_buf[2] = mask;
+	spi_tx_buf[3] = data;
+	return spi_write_buf(spi_tx_buf, 4U);
+}
+
+/**
+ * Requests 2 (cmd echo) + RX_FRAME_MAX rx bytes
+ * reads and full RX frame reads with a single function
+ */
+static bool start_reg_read(uint8_t addr) {
+	spi_tx_buf[0] = MCP_READ;
+	spi_tx_buf[1] = addr;
+	return spi_transact_buf(spi_tx_buf, 2U, (uint8_t) (2U + RX_FRAME_MAX));
+}
+
 /**************************************HELPERS***********************************/
 // first address, all data in buf !!, write "len" registers with data data
 static bool reg_write_many(uint8_t spi_num, uint8_t slave_num, uint8_t addr, const uint8_t *data, uint8_t len) {
@@ -260,7 +610,7 @@ static bool reg_write_many(uint8_t spi_num, uint8_t slave_num, uint8_t addr, con
 	return true;
 }
 
-// poll until done with timeout (ms)
+// poll until done
 static inline void wait_done(volatile bool *flag) {
 	while (!(*flag))
 		;
@@ -278,7 +628,6 @@ static bool bit_modify(uint8_t spi_num, uint8_t slave_num, uint8_t addr, uint8_t
 	if (queued == 0U)
 		return false;
 
-	// delay_ms(20);
 	wait_done(&done);
 	return true;
 }
@@ -296,7 +645,6 @@ static bool reg_read(uint8_t spi_num, uint8_t slave_num, uint8_t addr, uint8_t *
 	if (queued == 0U)
 		return false;
 
-	// delay_ms(20);
 	wait_done(&done);
 
 	uint8_t dummy[2];
@@ -304,11 +652,4 @@ static bool reg_read(uint8_t spi_num, uint8_t slave_num, uint8_t addr, uint8_t *
 		return false;
 
 	return spi_drv_read(spi_num, slave_num, out, 1U);
-}
-
-// @todo take out
-static void delay_ms(uint32_t ms) {
-	volatile uint32_t cycles = ms * 15000U;
-	while (cycles--)
-		;
 }

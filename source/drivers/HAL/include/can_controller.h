@@ -12,6 +12,9 @@ bool can_controller_drv_init();
 /**
  * @brief BLOCKING CAN TEST SENDER
  */
-bool can_send(const uint8_t *data, uint8_t len);
+// bool can_send(const uint8_t *data, uint8_t len);
 
+bool can_send(const uint8_t *data, uint8_t len, void (*on_done)(bool success));
+
+void can_process(void);
 #endif
