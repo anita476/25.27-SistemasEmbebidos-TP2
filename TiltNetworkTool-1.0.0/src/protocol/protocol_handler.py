@@ -22,11 +22,12 @@ class ProtocolHandler:
         Recibe bytes crudos desde el puerto serie y devuelve a la GUI una lista de mensajes parseados.
 
         Formato esperado :
+        - id: estación en el rango 0x100..0x107
         - angleId: 1 byte ('R', 'C', 'O')
         - angleVal: 1-4 bytes con el valor en ASCII (ej: "-34", "0", "67", "+138")
         Sin terminador '\0' !!
 
-        Ejemplos válidos: "R-34C0O67", "R+138", "C-072O000"
+        Ejemplos válidos: "0x100R-34", "0x101C0", "0x107O+138"
 
         Debe devolver: lista de mensajes. Cada mensaje es un dict con:
           - 'station_index': int (0..N-1)
@@ -40,23 +41,38 @@ class ProtocolHandler:
         # Acumular bytes en el buffer
         self.rx_buffer += data
 
-        # estamos confiando que vienen ok los msgs, sino no va a encontrar nada
-        # busco patrón angleId (R/C/O) seguido de valor numérico
-        pattern = rb'([RCO])([-+]?\d{1,4})'
+        # Acepta ID como ASCII ("0x100".."0x107" o "100".."107")
+        frame_start = rb'(?:0[xX])?10[0-7][RCO]|\x01[\x00-\x07][RCO]'
+        frame_end = rb'(?=' + frame_start + rb'|[\x00\r\n])'
+        pattern = (
+            rb'(?:0[xX])?(10[0-7])([RCO])([-+]?\d{1,4})' + frame_end +
+            rb'|(\x01[\x00-\x07])([RCO])([-+]?\d{1,4})' + frame_end
+        )
         matches = re.finditer(pattern, self.rx_buffer)
         
         parsed_positions = []
         for match in matches:
             try:
-                angle_id = chr(match.group(1)[0])
-                angle_val = int(match.group(2))
+                if match.group(1) is not None:
+                    station_id = int(match.group(1), 16)
+                    angle_id = chr(match.group(2)[0])
+                    angle_val = int(match.group(3))
+                else:
+                    station_id = int.from_bytes(match.group(4), byteorder='big')
+                    angle_id = chr(match.group(5)[0])
+                    angle_val = int(match.group(6))
+
+                station_index = station_id - 0x100
                 
                 messages.append({
-                    'station_index': 0,  # Por defecto asumimos estación 0 si no viene en el mensaje
+                    'station_index': station_index,
                     'angle': self.angle_map[angle_id],
                     'value': angle_val
                 })
-                logging.debug(f"[ProtocolHandler] Parsed message: angle={angle_id}, value={angle_val}")
+                logging.debug(
+                    f"[ProtocolHandler] Parsed message: station=0x{station_id:X}, "
+                    f"angle={angle_id}, value={angle_val}"
+                )
                 parsed_positions.append(match.end())
             except (ValueError, KeyError) as e:
                 logging.warning(f"[ProtocolHandler] Error al parsear: {e}")
@@ -64,6 +80,11 @@ class ProtocolHandler:
         if parsed_positions:
             last_end = max(parsed_positions)
             self.rx_buffer = self.rx_buffer[last_end:]
+            next_match = re.search(frame_start, self.rx_buffer)
+            if next_match:
+                self.rx_buffer = self.rx_buffer[next_match.start():]
+            else:
+                self.rx_buffer = b""
         
         return messages
 

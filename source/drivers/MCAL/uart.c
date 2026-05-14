@@ -2,7 +2,7 @@
 #include "include/port.h"
 #define UART_ALTS 5
 #define MAX_UART_USE 5 /* Max number of uarts that can be in use at any given time*/
-#define BUFFER_CHAR_SIZE 255
+#define BUFFER_CHAR_SIZE 128U
 #define UART_HAL_DEFAULT_BAUDRATE 115200
 #define UART_SENTINEL 0xFF
 typedef struct {
