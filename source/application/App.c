@@ -141,7 +141,7 @@ void App_Run(void) {
 		/* process all available can franes */
 		while (can_available()) {
 			if (can_read(&rx_frame)) {
-				// process_can_frame(rx_frame);
+				process_can_frame(rx_frame);
 			}
 		}
 

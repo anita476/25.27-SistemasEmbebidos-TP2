@@ -30,28 +30,27 @@ bool process_can_frame(CanFrame_t frame) {
 	if (frame.dlc == 0u) {
 		return false;
 	}
-
 	/* if dlc = 1, led command*/
 	if (frame.dlc == 1u) {
 		uint8_t led_byte = frame.data[0];
 
-		/* Check if the upper 3 bits of the LED byte match our group.
-		 * Format: 1JKL 0RGB — group is bits [6:4] */
+		/* check if msb 3 bits of the LED byte match group id
+		 * Format 1JKL 0RGB
+		 * group is bits [6:4]
+		 * */
 		uint8_t frame_group = (led_byte >> 4u) & 0x07u;
 		uint8_t our_group = (uint8_t) (CAN_GROUP & 0x07u);
 
 		if (frame_group == our_group) {
 			process_led_cmd(led_byte);
-		} else {
-			/* Not ours — forward via UART as 'L' + data byte */
+		} else { // @todo maybe discard later...
+			/* 'L' + data byte */
 			uint8_t buf[4];
 			uint8_t pos = 0u;
-
 			buf[pos++] = 'L';
 			buf[pos++] = led_byte;
 			buf[pos++] = '\r';
 			buf[pos++] = '\n';
-
 			UART_data_transmit(UART_ID, (unsigned char *) buf, pos);
 		}
 		return true;
@@ -61,37 +60,33 @@ bool process_can_frame(CanFrame_t frame) {
 	if (angle_id != 'R' && angle_id != 'C' && angle_id != 'O') {
 		return false;
 	}
-
 	if (frame.dlc > 5u) {
-		return false; /* angleId (1 byte) + angle value (1–4 ASCII bytes) */
+		return false; /* angleId (1 byte) + angle value*/
 	}
 
-	{
-		static const char hex[] = "0123456789ABCDEF";
-		uint8_t buf[UART_BUF_SIZE];
-		uint8_t pos = 0u;
+	static const char hex[] = "0123456789ABCDEF";
+	uint8_t buf[UART_BUF_SIZE];
+	uint8_t pos = 0u;
 
-		/* Copy data locally before building the message */
-		uint8_t dlc_copy = frame.dlc;
-		uint32_t id_copy = frame.id;
-		uint8_t data_copy[8];
-		memcpy(data_copy, frame.data, dlc_copy);
+	uint8_t dlc_copy = frame.dlc;
+	uint32_t id_copy = frame.id;
+	uint8_t data_copy[8];
+	memcpy(data_copy, frame.data, dlc_copy);
 
-		/* CAN ID as 3 hex digits */
-		buf[pos++] = hex[(id_copy >> 8u) & 0x0Fu];
-		buf[pos++] = hex[(id_copy >> 4u) & 0x0Fu];
-		buf[pos++] = hex[id_copy & 0x0Fu];
+	/* CAN ID as 3 hex digits */
+	buf[pos++] = hex[(id_copy >> 8u) & 0x0Fu];
+	buf[pos++] = hex[(id_copy >> 4u) & 0x0Fu];
+	buf[pos++] = hex[id_copy & 0x0Fu];
 
-		/* Append data bytes verbatim (already ASCII) */
-		for (uint8_t i = 0u; i < dlc_copy && i < 8u; i++) {
-			buf[pos++] = data_copy[i];
-		}
-
-		buf[pos++] = '\r';
-		buf[pos++] = '\n';
-
-		UART_data_transmit(UART_ID, (unsigned char *) buf, pos);
+	/* append  data bytes raw since theyre already ascii */
+	for (uint8_t i = 0u; i < dlc_copy && i < 8u; i++) {
+		buf[pos++] = data_copy[i];
 	}
+
+	buf[pos++] = '\r';
+	buf[pos++] = '\n';
+
+	UART_data_transmit(UART_ID, (unsigned char *) buf, pos);
 
 	return true;
 }

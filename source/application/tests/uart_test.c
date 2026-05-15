@@ -33,7 +33,7 @@ bool uart_test(uint8_t uart_id) {
 				// Echo character
 				if (UART_tstatus(uart_id)) {
 					UART_data_transmit(uart_id, &c, 1);
-					printf("Wrote %c to transmit\n", (char) c);
+					// printf("Wrote %c to transmit\n", (char) c);
 				}
 			}
 		}

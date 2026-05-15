@@ -10,10 +10,10 @@
 
 - [x] UART drv 
 - [x] SPI drv
-- [ ] I2C drv
-- [ ] Terminal uart prot application
-- [ ] Can controller driver
-- [ ] Acc driver
-- [ ] Misc led color funcs
-- [ ] Logic level protocol
+- [x] I2C drv
+- [ ] Terminal uart prot application -> in progress, missing parsing update
+- [ ] Can controller driver -> blocking for now 
+- [x] Acc driver
+- [x] Misc led color funcs
+- [ ] Logic level protocol -> in progress
 
