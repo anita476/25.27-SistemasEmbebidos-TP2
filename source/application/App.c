@@ -6,18 +6,21 @@
 /*******************************************************************************
  * INCLUDE HEADER FILES
  ******************************************************************************/
+#include "../drivers/HAL/include/FXOS.h"
 #include "../drivers/HAL/include/board_led.h"
+#include "../drivers/HAL/include/can_comm.h"
 #include "../drivers/HAL/include/can_controller.h"
 #include "../drivers/HAL/include/communication.h"
 #include "../drivers/HAL/include/switch.h"
 #include "../drivers/HAL/include/timer.h"
+#include "../drivers/MCAL/include/pisr.h"
 #include "../drivers/MCAL/include/uart.h"
 #include "include/App_commons.h"
 #include "include/fsm_table.h"
 #include "tests/include/spi_test.h"
 #include "tests/include/uart_test.h"
-#include "../drivers/HAL/include/FXOS.h"
-#include "../drivers/MCAL/include/pisr.h"
+
+#define SENSOR_ASCII_BUF_SIZE 24U
 
 /*******************************************************************************
  * CONSTANT AND MACRO DEFINITIONS USING #DEFINE
@@ -36,8 +39,10 @@ static uint8_t uart_id;
 static CommLedCmd_t out_cmd;
 static bool can_tx_busy = false;
 
-static int FXOSflag = 0;
-sensor_t* angles;
+static uint8_t buf[SENSOR_ASCII_BUF_SIZE];
+
+volatile static int FXOSflag = 0;
+sensor_t *angles;
 
 /*******************************************************************************
  * PRIVATE FUNCTION DECLARATIONS
@@ -45,6 +50,57 @@ sensor_t* angles;
 static EVENT App_CaptureEvent(void);
 static void on_can_tx_done(bool success);
 
+/* todo make them diff messages ! */
+uint8_t sensor_to_ascii(const sensor_t *sensor, uint8_t *buf, uint8_t buf_size) {
+	if (sensor == NULL || buf == NULL) {
+		return 0u;
+	}
+
+	/* Each angle: id(1) + sign(1) + up to 3 digits + \r\n = 7 bytes max
+	 * 3 angles = 21 bytes max                                            */
+	if (buf_size < 21u) {
+		return 0u;
+	}
+
+	const struct {
+		char id;
+		angle_t val;
+	} angles[3] = {
+		{'R', sensor->roll},
+		{'C', sensor->pitch},
+		{'O', sensor->yaw},
+	};
+
+	uint8_t pos = 0u;
+
+	for (uint8_t i = 0u; i < 3u; i++) {
+		angle_t val = angles[i].val;
+
+		/* ID character */
+		buf[pos++] = (uint8_t) angles[i].id;
+
+		/* Sign */
+		if (val < 0) {
+			buf[pos++] = '-';
+			val = -val;
+		} else {
+			buf[pos++] = '+';
+		}
+
+		if (val >= 100) {
+			buf[pos++] = (uint8_t) ('0' + (val / 100) % 10);
+		}
+		if (val >= 10) {
+			buf[pos++] = (uint8_t) ('0' + (val / 10) % 10);
+		}
+		buf[pos++] = (uint8_t) ('0' + (val % 10));
+
+		buf[pos++] = '\r';
+		buf[pos++] = '\n';
+	}
+
+	return pos;
+}
 /*******************************************************************************
  * GLOBAL FUNCTION DEFINITIONS
  ******************************************************************************/
@@ -61,75 +117,44 @@ void App_Init(void) {
 }
 
 void App_Run(void) {
-	board_led_drv_state(GREEN, true);
-	board_led_drv_state(BLUE, true);
-
+	/* INITIALIZE CAN CONTROLLER */
 	if (!can_controller_drv_init()) {
 		board_led_drv_state(RED, true);
 		while (1) {
+			; /* do nothing til death*/
 		}
+	} else {
+		board_led_drv_state(GREEN, true);
 	}
-	if(!FXOSinitflag){
+	if (!FXOSflag) {
 		FXOS_Init();
-		FXOSinitflag = 1;
+		FXOSflag = 1;
 	}
 
 	while (1) {
 		timer_drv_update(); /* must be called every iteration */
-
-		can_process();
+		can_process();		/* must be called every iteration */
+		angles = FXOSgetAngles();
 
 		CanFrame_t rx_frame;
 
+		/* process all available can franes */
 		while (can_available()) {
 			if (can_read(&rx_frame)) {
-				UART_data_transmit(0, (uint8_t *) "RX ID: ", 7);
-
-				const char hex[] = "0123456789ABCDEF";
-
-				for (int shift = 8; shift >= 0; shift -= 4) {
-					uint8_t nibble = (rx_frame.id >> shift) & 0x0F;
-					uint8_t c = hex[nibble];
-					UART_data_transmit(uart_id, &c, 1);
-				}
-
-				UART_data_transmit(uart_id, (uint8_t *) " DATA: ", 7);
-
-				for (uint8_t i = 0; i < rx_frame.dlc; i++) {
-					uint8_t hi = (rx_frame.data[i] >> 4) & 0x0F;
-					uint8_t lo = rx_frame.data[i] & 0x0F;
-
-					uint8_t msg[3];
-					msg[0] = hex[hi];
-					msg[1] = hex[lo];
-					msg[2] = ' ';
-
-					UART_data_transmit(0, msg, sizeof(msg));
-				}
-
-				UART_data_transmit(0, (uint8_t *) "\r\n", 2);
+				// process_can_frame(rx_frame);
 			}
 		}
 
 		if (timer_drv_expired(id)) {
-			UART_data_transmit(uart_id, (uint8_t *) "101C-100", 9);
 			timer_drv_start(id, 2000, TIM_MODE_SINGLESHOT, NULL);
-			uint8_t out = 0x0U;
-			// get_int_blocking(&out);
-			get_int_blocking(&out);
-			const char hex[] = "0123456789ABCDEF";
-			uint8_t hi = (out >> 4) & 0x0F;
-			uint8_t lo = out & 0x0F;
-			uint8_t msg3[] = {'R', 'E', 'G', ':', ' ', hex[hi], hex[lo], '\r', '\n'};
-			UART_data_transmit(uart_id, msg3, sizeof(msg3));
-
+			uint8_t len = sensor_to_ascii(angles, buf, sizeof(buf));
+			UART_data_transmit(uart_id, (unsigned char *) buf, len);
 			if (!can_tx_busy) {
 				if (can_send((const uint8_t *) "101C-100", 2, on_can_tx_done)) {
 					can_tx_busy = true;
 				}
 			}
 		}
-		angles = FXOSgetAngles();
 	}
 }
 

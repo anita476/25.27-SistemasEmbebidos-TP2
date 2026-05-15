@@ -1,0 +1,97 @@
+#include "include/can_comm.h"
+#include "../MCAL/include/uart.h"
+#include "include/board_led.h"
+#include <stdint.h>
+#include <string.h>
+
+#define CAN_GROUP 0x101u
+#define UART_ID 0u /* UART peripheral to use            */
+
+#define UART_BUF_SIZE 16u
+static void process_led_cmd(uint8_t led_bits);
+
+static void process_led_cmd(uint8_t led_byte) {
+	// last 3 bits are the actual are RGB, use
+	// board_led_drv_state(RED, led_bits >> shift etc)
+	board_led_drv_state(RED, (led_byte >> 2u) & 0x01u);
+	board_led_drv_state(GREEN, (led_byte >> 1u) & 0x01u);
+	board_led_drv_state(BLUE, (led_byte >> 0u) & 0x01u);
+}
+
+bool process_can_frame(CanFrame_t frame) {
+	// if data < 2 then its a led command
+	// if first 3 bits match CAN_GROUP,and execute
+	// if they dont match, do nothing... maybe send the command via uart or smth
+
+	// if data > 2 then its an angle
+	// parse angle, convert to ascii and then queue send via uart
+	// [ FIRST IS id (3 hexa), then add the rest of data bytes send them in hexa )
+
+	if (frame.dlc == 0u) {
+		return false;
+	}
+
+	/* if dlc = 1, led command*/
+	if (frame.dlc == 1u) {
+		uint8_t led_byte = frame.data[0];
+
+		/* Check if the upper 3 bits of the LED byte match our group.
+		 * Format: 1JKL 0RGB — group is bits [6:4] */
+		uint8_t frame_group = (led_byte >> 4u) & 0x07u;
+		uint8_t our_group = (uint8_t) (CAN_GROUP & 0x07u);
+
+		if (frame_group == our_group) {
+			process_led_cmd(led_byte);
+		} else {
+			/* Not ours — forward via UART as 'L' + data byte */
+			uint8_t buf[4];
+			uint8_t pos = 0u;
+
+			buf[pos++] = 'L';
+			buf[pos++] = led_byte;
+			buf[pos++] = '\r';
+			buf[pos++] = '\n';
+
+			UART_data_transmit(UART_ID, (unsigned char *) buf, pos);
+		}
+		return true;
+	}
+
+	uint8_t angle_id = frame.data[0];
+	if (angle_id != 'R' && angle_id != 'C' && angle_id != 'O') {
+		return false;
+	}
+
+	if (frame.dlc > 5u) {
+		return false; /* angleId (1 byte) + angle value (1–4 ASCII bytes) */
+	}
+
+	{
+		static const char hex[] = "0123456789ABCDEF";
+		uint8_t buf[UART_BUF_SIZE];
+		uint8_t pos = 0u;
+
+		/* Copy data locally before building the message */
+		uint8_t dlc_copy = frame.dlc;
+		uint32_t id_copy = frame.id;
+		uint8_t data_copy[8];
+		memcpy(data_copy, frame.data, dlc_copy);
+
+		/* CAN ID as 3 hex digits */
+		buf[pos++] = hex[(id_copy >> 8u) & 0x0Fu];
+		buf[pos++] = hex[(id_copy >> 4u) & 0x0Fu];
+		buf[pos++] = hex[id_copy & 0x0Fu];
+
+		/* Append data bytes verbatim (already ASCII) */
+		for (uint8_t i = 0u; i < dlc_copy && i < 8u; i++) {
+			buf[pos++] = data_copy[i];
+		}
+
+		buf[pos++] = '\r';
+		buf[pos++] = '\n';
+
+		UART_data_transmit(UART_ID, (unsigned char *) buf, pos);
+	}
+
+	return true;
+}
