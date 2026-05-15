@@ -74,6 +74,9 @@ class FrdmViewerWidget(QOpenGLWidget):
         
 
     def paintGL(self):
+        if not hasattr(self, 'shader'):
+            return
+
         for x in range(STATION_COUNT):
             self.stations[x].update()
         
