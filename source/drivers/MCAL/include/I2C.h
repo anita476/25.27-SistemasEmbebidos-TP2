@@ -18,7 +18,7 @@ typedef enum{
 typedef uint8_t I2C_Address_t;
 
 typedef struct{
-	I2C_Status_t status;
+	volatile I2C_Status_t status;
 	I2C_RW_t RW;
 	uint8_t * data_arr;
 	uint8_t size;

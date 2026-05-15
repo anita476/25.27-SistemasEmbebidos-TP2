@@ -1,84 +1,114 @@
-#include "../HAL/include/FXOS.h"
+#include <math.h>
+//#include "board.h"
+//#include "debug.h"		// For measuring ISR time
 #include "../MCAL/include/I2C.h"
+//#include "macros.h"
+#include "../MCAL/include/pisr.h"
+//#include "timer.h"
+#include "../HAL/include/FXOS.h"
+#include <math.h>
 
-// FXOS I2C address
-#define FXOS_ADDR 0x1E // with pins SA0=0, SA1=0
 
-// FXOS internal register addresses
-#define FXOS_STATUS 0x00
-#define FXOS_WHOAMI 0x0D
-#define FXOS_XYZ_DATA_CFG 0x0E
-#define FXOS_CTRL_REG1 0x2A
-#define FXOS_M_CTRL_REG1 0x5B
-#define FXOS_M_CTRL_REG2 0x5C
-#define FXOS_WHOAMI_VAL 0xC7
+//#define DEVELOPMENT_MODE			1
+#define CONFIG_FREQUENCY_HZ			1000U
 
-// number of bytes to be read from the FXOS
-#define FXOS_READ_LEN 13 // status plus 6 channels =13 bytes
+//typedef enum { OFF, IDLE, READING } state_t;
+//typedef enum { BLOCKING, NON_BLOCKING } mode_t;
+//typedef enum { BUSY, DONE, ERROR } bus_status_t;
 
-// function configures FXOS combination accelerometer and magnetometer sensor
-int FXOS_Init(void) {
-	I2C_Init();
-	uint8_t data[FXOS_READ_LEN];
+//static const bus_status_t bus_status[] = { BUSY, DONE, ERROR };
 
-	// read and check the FXOS WHOAMI register
-	if (I2C_StartComm(data, 1, FXOS_ADDR, FXOS_WHOAMI, Read) != 1) {
-		return (FXOS_ERROR);
-	}
-	if (data[0] != FXOS_WHOAMI_VAL) {
-		return (FXOS_ERROR);
-	}
+static raw_data_t accel_data, magn_data;
+static sensor_t data;
+//static bool status_bus, status_config;
+uint8_t databuffer[FXOS8700CQ_READ_LEN] = {0};
 
-	// write 0000 0000 = 0x00 to accelerometer control register 1 to place FXOS into standby
-	data[0] = 0x00;
-	if (I2C_StartComm(data, 1, FXOS_ADDR, FXOS_CTRL_REG1, Write) != 1) {
-		return (FXOS_ERROR);
-	}
-
-	// write 0001 1111 = 0x1F to magnetometer control register 1
-	data[0] = 0x1F;
-	if (I2C_StartComm(data, 1, FXOS_ADDR, FXOS_M_CTRL_REG1, Write) != 1) {
-		return (FXOS_ERROR);
-	}
-
-	// write 0010 0000 = 0x20 to magnetometer control register 2
-	data[0] = 0x20;
-	if (I2C_StartComm(data, 1, FXOS_ADDR, FXOS_M_CTRL_REG2, Write) != 1) {
-		return (FXOS_ERROR);
-	}
-
-	// write 0000 0001= 0x01 to XYZ_DATA_CFG register
-	data[0] = 0x01;
-	if (I2C_StartComm(data, 1, FXOS_ADDR, FXOS_XYZ_DATA_CFG, Write) != 1) {
-		return (FXOS_ERROR);
-	}
-
-	// write 0000 1101 = 0x0D to accelerometer control register 1
-	data[0] = 0x0D;
-	if (I2C_StartComm(data, 1, FXOS_ADDR, FXOS_CTRL_REG1, Write) != 1) {
-		return (FXOS_ERROR);
-	}
-	// normal return
-	return (FXOS_OK);
+sensor_t* FXOSgetAngles (void)
+{
+	return &data;
 }
 
-// read status and the three channels of accelerometer andmagnetometer data from FXOS (13 bytes)
-FXOS_Status_t ReadAccelMagnData(SRAWDATA *pAccelData, SRAWDATA *pMagnData) {
-	uint8_t Buffer[FXOS_READ_LEN]; // read buffer
-	// read FXOS_READ_LEN=13 bytes (status byte and the sixchannels of data)
-	if (I2C_StartComm(Buffer, FXOS_READ_LEN, FXOS_ADDR, FXOS_STATUS, Read) == FXOS_READ_LEN) {
-		// copy the 14 bit accelerometer byte data into 16 bit words
-		pAccelData->x = (int16_t) (((Buffer[1] << 8) | Buffer[2])) >> 2;
-		pAccelData->y = (int16_t) (((Buffer[3] << 8) | Buffer[4])) >> 2;
-		pAccelData->z = (int16_t) (((Buffer[5] << 8) | Buffer[6])) >> 2;
-		// copy the magnetometer byte data into 16 bit words
-		pMagnData->x = (Buffer[7] << 8) | Buffer[8];
-		pMagnData->y = (Buffer[9] << 8) | Buffer[10];
-		pMagnData->z = (Buffer[11] << 8) | Buffer[12];
-	} else {
-		// return with error
-		return (FXOS_ERROR);
+void FXOS_Init (void)
+{
+	static uint8_t ID;
+	uint8_t databyte;
+
+	I2C_Init();
+
+
+	if (I2C_GetStatus() == Done)
+	{
+		
+		I2C_StartComm(&ID, 1, FXOS8700CQ_ADDR, FXOS8700CQ_WHOAMI, Read); // Read and check the ID
+		waitforI2C();
+		if (ID == FXOS8700CQ_WHOAMI_VAL)
+		{
+			databyte = 0x00; // Place into standby
+			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_CTRL_REG1, Write);
+			waitforI2C();
+			databyte = 0x1F; // No auto calibration, one-shot magn reset or measurement, 8x oversampling and hybrid mode
+			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_M_CTRL_REG1, Write);
+			waitforI2C();
+			databyte = 0x20; // Map magn registers to follow accel, retain min/max latching and enable magn reset each cycle
+			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_M_CTRL_REG2, Write);
+			waitforI2C();
+			databyte = 0x01; //No filter and accel range of +/-4g range with 0.488mg/LSB
+			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_XYZ_DATA_CFG, Write);
+			waitforI2C();
+			//databyte = 0x00; // Disable FIFO
+			//I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_F_SETUP, Write);
+			//waitforI2C();
+			databyte = 0x0D; // 200Hz data rate, low noise, 16 bit reads, out of standby and enable sampling
+			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_CTRL_REG1, Write);
+			waitforI2C();
+
+			pisr_drv_register(readFXOSdata, 25); // Configure PISR for the FXOS
+		}
 	}
-	// normal return
-	return (FXOS_OK);
+}
+
+void readFXOSdata (void)
+{
+	//Process the data from the last read cycle
+	//accel_data.x = (int16_t)((databuffer[1] << 8) | databuffer[2]) >> 2;
+	//accel_data.y = (int16_t)((databuffer[3] << 8) | databuffer[4]) >> 2;
+	//accel_data.z = (int16_t)((databuffer[5] << 8) | databuffer[6]) >> 2;
+
+	//magn_data.x = (int16_t)((databuffer[7]  << 8) | databuffer[8]);
+	//magn_data.y = (int16_t)((databuffer[9]  << 8) | databuffer[10]);
+	//magn_data.z = (int16_t)((databuffer[11] << 8) | databuffer[12]);
+	accel_data.x  = (int16_t)(((databuffer[1] << 8) | databuffer[2]))>> 2;
+	accel_data.y  = (int16_t)(((databuffer[3] << 8) | databuffer[4]))>> 2;
+	accel_data.z  = (int16_t)(((databuffer[5] << 8) | databuffer[6]))>> 2;
+
+    magn_data.x = (databuffer[7] << 8) | databuffer[8];
+    magn_data.y = (databuffer[9] << 8) | databuffer[10];
+    magn_data.z = (databuffer[11] << 8) | databuffer[12];
+
+
+	//Calculate Y,R,P angles from axis data
+	float pitch_rad = atan2f(accel_data.y, accel_data.z);
+	float roll_rad = atan2f(accel_data.x, accel_data.z);
+
+	float mag_x_comp = magn_data.x * cosf(pitch_rad) + magn_data.z * sinf(pitch_rad);
+	float mag_y_comp = magn_data.x * sinf(roll_rad) * sinf(pitch_rad) + magn_data.y * cosf(roll_rad) - magn_data.z * sinf(roll_rad) * cosf(pitch_rad);
+
+	data.yaw = (atan2f(mag_y_comp, mag_x_comp) * 180.0f / (float)M_PI);
+	data.pitch = pitch_rad * 180.0f / (float)M_PI;
+	data.roll = roll_rad * 180.0f / (float)M_PI;
+	//data.roll = atan2f(accel_data.y, accel_data.z) * 180/M_PI;
+	//data.pitch = atan2f((-1)* accel_data.x, (sqrt(accel_data.y * accel_data.y + accel_data.z * accel_data.z))) * 180/M_PI;
+
+	//Start next read cycle
+	I2C_StartComm(databuffer, FXOS8700CQ_READ_LEN, FXOS8700CQ_ADDR, FXOS8700CQ_STATUS, Read);
+
+}
+
+void waitforI2C ()
+{
+	I2C_Status_t status;
+	while ((status = I2C_GetStatus()) == Busy)
+	{		
+	}
+
 }

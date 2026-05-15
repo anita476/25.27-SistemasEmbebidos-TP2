@@ -16,6 +16,8 @@
 #include "include/fsm_table.h"
 #include "tests/include/spi_test.h"
 #include "tests/include/uart_test.h"
+#include "../drivers/HAL/include/FXOS.h"
+#include "../drivers/MCAL/include/pisr.h"
 
 /*******************************************************************************
  * CONSTANT AND MACRO DEFINITIONS USING #DEFINE
@@ -33,6 +35,9 @@ static uint8_t uart_id;
 
 static CommLedCmd_t out_cmd;
 static bool can_tx_busy = false;
+
+static int FXOSflag = 0;
+sensor_t* angles;
 
 /*******************************************************************************
  * PRIVATE FUNCTION DECLARATIONS
@@ -63,6 +68,10 @@ void App_Run(void) {
 		board_led_drv_state(RED, true);
 		while (1) {
 		}
+	}
+	if(!FXOSinitflag){
+		FXOS_Init();
+		FXOSinitflag = 1;
 	}
 
 	while (1) {
@@ -120,6 +129,7 @@ void App_Run(void) {
 				}
 			}
 		}
+		angles = FXOSgetAngles();
 	}
 }
 
