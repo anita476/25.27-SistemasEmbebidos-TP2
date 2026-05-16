@@ -5,6 +5,7 @@
 // #include "macros.h"
 #include "../MCAL/include/pisr.h"
 // #include "timer.h"
+#include "../../../SDK/CMSIS/cmsis_gcc.h"
 #include "../HAL/include/FXOS.h"
 #include <math.h>
 
@@ -26,38 +27,77 @@ sensor_t *FXOSgetAngles(void) {
 	return &data;
 }
 
+typedef enum {
+	FXOS_RUNNING,
+	FXOS_INIT_START,
+	FXOS_INIT_WHOAMI,
+	FXOS_INIT_STANDBY,
+	FXOS_INIT_M_CTRL1,
+	FXOS_INIT_M_CTRL2,
+	FXOS_INIT_XYZ_CFG,
+	FXOS_INIT_ACTIVE,
+} fxos_state_t;
+
+static volatile fxos_state_t fxos_state = FXOS_INIT_START;
+static uint8_t databyte;
+static uint8_t ID;
+
+static void FXOS_task(void);
 void FXOS_Init(void) {
-	static uint8_t ID;
-	uint8_t databyte;
-
 	I2C_Init();
+	fxos_state = FXOS_INIT_START;
+	pisr_drv_register(FXOS_task, 25);
+}
 
-	if (I2C_GetStatus() == Done) {
-		I2C_StartComm(&ID, 1, FXOS8700CQ_ADDR, FXOS8700CQ_WHOAMI, Read); // Read and check the ID
-		waitforI2C();
-		if (ID == FXOS8700CQ_WHOAMI_VAL) {
-			databyte = 0x00; // Place into standby
+void FXOS_task(void) {
+	if (I2C_GetStatus() == Busy)
+		return; // wait for previous transaction
+
+	switch (fxos_state) {
+		case FXOS_RUNNING:
+			readFXOSdata();
+			break;
+		case FXOS_INIT_START:
+			I2C_StartComm(&ID, 1, FXOS8700CQ_ADDR, FXOS8700CQ_WHOAMI, Read);
+			fxos_state = FXOS_INIT_WHOAMI;
+			break;
+
+		case FXOS_INIT_WHOAMI:
+			if (ID != FXOS8700CQ_WHOAMI_VAL) { /* handle error */
+				break;
+			}
+			databyte = 0x00;
 			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_CTRL_REG1, Write);
-			waitforI2C();
-			databyte = 0x1F; // No auto calibration, one-shot magn reset or measurement, 8x oversampling and hybrid mode
+			fxos_state = FXOS_INIT_STANDBY;
+			break;
+
+		case FXOS_INIT_STANDBY:
+			databyte = 0x1F;
 			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_M_CTRL_REG1, Write);
-			waitforI2C();
-			databyte =
-				0x20; // Map magn registers to follow accel, retain min/max latching and enable magn reset each cycle
-			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_M_CTRL_REG2, Write);
-			waitforI2C();
-			databyte = 0x01; // No filter and accel range of +/-4g range with 0.488mg/LSB
-			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_XYZ_DATA_CFG, Write);
-			waitforI2C();
-			// databyte = 0x00; // Disable FIFO
-			// I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_F_SETUP, Write);
-			// waitforI2C();
-			databyte = 0x0D; // 200Hz data rate, low noise, 16 bit reads, out of standby and enable sampling
-			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_CTRL_REG1, Write);
-			waitforI2C();
+			fxos_state = FXOS_INIT_M_CTRL1;
+			break;
 
-			pisr_drv_register(readFXOSdata, 25); // Configure PISR for the FXOS
-		}
+		case FXOS_INIT_M_CTRL1:
+			databyte = 0x20;
+			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_M_CTRL_REG2, Write);
+			fxos_state = FXOS_INIT_M_CTRL2;
+			break;
+
+		case FXOS_INIT_M_CTRL2:
+			databyte = 0x01;
+			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_XYZ_DATA_CFG, Write);
+			fxos_state = FXOS_INIT_XYZ_CFG;
+			break;
+
+		case FXOS_INIT_XYZ_CFG:
+			databyte = 0x0D;
+			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_CTRL_REG1, Write);
+			fxos_state = FXOS_INIT_ACTIVE;
+			break;
+
+		case FXOS_INIT_ACTIVE:
+			fxos_state = FXOS_RUNNING;
+			break;
 	}
 }
 
@@ -100,5 +140,6 @@ void readFXOSdata(void) {
 void waitforI2C() {
 	I2C_Status_t status;
 	while ((status = I2C_GetStatus()) == Busy) {
+		;
 	}
 }
