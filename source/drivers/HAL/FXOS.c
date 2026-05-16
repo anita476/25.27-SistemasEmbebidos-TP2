@@ -72,7 +72,7 @@ void FXOS_task(void) {
 			break;
 
 		case FXOS_INIT_STANDBY:
-			databyte = 0x1F;
+			databyte = 0x9F; #Habilitar autocalibracion para que funcione bien el magnetometro
 			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_M_CTRL_REG1, Write);
 			fxos_state = FXOS_INIT_M_CTRL1;
 			break;
