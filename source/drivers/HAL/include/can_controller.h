@@ -1,5 +1,6 @@
 #ifndef _CAN_CONTROLLER_H
 #define _CAN_CONTROLLER_H
+#include "FXOS.h"
 
 /******************************************************************************
  * INCLUDES
@@ -91,9 +92,7 @@ bool can_available(void);
  */
 bool can_read(CanFrame_t *frame);
 
-/******************************************************************************
- * OPTIONAL STATUS HELPERS
- ******************************************************************************/
+bool can_send_angle(angle_t value, char angle_id, can_tx_cb_t cb);
 
 /**
  * @brief Returns true while TX pending
@@ -105,5 +104,4 @@ bool can_tx_busy_status(void);
  */
 bool can_irq_busy_status(void);
 
-bool get_int_blocking(uint8_t *out);
 #endif

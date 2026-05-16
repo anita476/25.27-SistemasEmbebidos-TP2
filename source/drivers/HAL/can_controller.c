@@ -378,9 +378,6 @@ static void service_tx0(void) {
 	}
 }
 
-bool get_int_blocking(uint8_t *out) {
-	return reg_read(MCP_REG_CANINTF, out);
-}
 static bool reg_read(uint8_t reg, uint8_t *out) {
 	spi_tx_buf[0] = MCP_READ;
 	spi_tx_buf[1] = reg;

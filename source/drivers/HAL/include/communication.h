@@ -1,6 +1,7 @@
 #ifndef _COMMUNICATION_H_
 #define _COMMUNICATION_H_
 
+#include "FXOS.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -39,15 +40,7 @@ bool communication_drv_receive_led_cmd(CommLedCmd_t *out_cmd);
  *
  * Valid examples: "R-34", "C0", "O67", "R+138", "R00", "C-072".
  */
-bool communication_drv_send_angle_ascii(CommAngleId angle_id, const char *angle_value, uint8_t angle_value_len);
-
-/**
- * @brief Send an angle frame from an integer value.
- *
- * The integer is converted to decimal ASCII without forced leading zeroes.
- * The resulting value, including sign when negative, must fit in 4 bytes ...
- */
-bool communication_drv_send_angle_int(CommAngleId angle_id, int16_t angle_value);
+void communication_drv_send_angle(char angle_id, angle_t value);
 
 /**
  * @brief Send raw bytes through the communication UART.

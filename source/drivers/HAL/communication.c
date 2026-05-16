@@ -1,8 +1,9 @@
 #include "include/communication.h"
 #include "../MCAL/include/uart.h"
 #include "include/board.h"
-
+#include "include/can_comm.h"
 #include <stddef.h>
+#include <string.h>
 
 #define COMM_LED_CMD_MASK_FIXED_BITS 0x88u
 #define COMM_LED_CMD_FIXED_BITS 0x80u
@@ -16,6 +17,9 @@
 
 #define COMM_MAX_ANGLE_VALUE_LEN 4u
 #define COMM_MAX_ANGLE_FRAME_LEN (1u + COMM_MAX_ANGLE_VALUE_LEN)
+
+#define ANGLE_BUF_SIZE 16U
+#define GROUP_ID CAN_GROUP
 
 static uint8_t comm_uart_id = INVALID_UART;
 
@@ -68,40 +72,59 @@ bool communication_drv_receive_led_cmd(CommLedCmd_t *out_cmd) {
 	return false;
 }
 
-// @todo revisar...
-bool communication_drv_send_angle_ascii(CommAngleId angle_id, const char *angle_value, uint8_t angle_value_len) {
-	uint8_t frame[COMM_MAX_ANGLE_FRAME_LEN];
+// @todo revisar... -> looks fine
+void communication_drv_send_angle(char angle_id, angle_t value) {
+	static char buf[ANGLE_BUF_SIZE];
+	uint8_t len = 0;
 
-	if (!comm_is_initialized() || !comm_is_valid_angle_id(angle_id) ||
-		!comm_is_valid_angle_ascii(angle_value, angle_value_len)) {
-		return false;
+	/* 3 hex digits of CAN ID */
+	buf[len++] = '0' + ((CAN_GROUP >> 8) & 0x0F); /* '1' */
+	buf[len++] = '0' + ((CAN_GROUP >> 4) & 0x0F); /* '0' */
+	buf[len++] = '0' + ((CAN_GROUP >> 0) & 0x0F); /* '1' */
+
+	/* angle identifier: R, C, or O */
+	buf[len++] = angle_id;
+
+	/* value: sign + up to 4 digits */
+	if (value < 0) {
+		buf[len++] = '-';
+		value = (angle_t) (-value);
+	} else {
+		buf[len++] = '+';
 	}
 
-	frame[0] = (uint8_t) angle_id;
+	char digits[5];
+	uint8_t ndigits = 0;
+	uint16_t uval = (uint16_t) value;
 
-	for (uint8_t i = 0u; i < angle_value_len; i++) {
-		frame[i + 1u] = (uint8_t) angle_value[i];
+	if (uval == 0) {
+		digits[ndigits++] = '0';
+	} else {
+		while (uval > 0) {
+			digits[ndigits++] = '0' + (uval % 10);
+			uval /= 10;
+		}
+		/* digits are in reverse order, flip them */
+		for (uint8_t i = 0; i < ndigits / 2; i++) {
+			char tmp = digits[i];
+			digits[i] = digits[ndigits - 1 - i];
+			digits[ndigits - 1 - i] = tmp;
+		}
 	}
 
-	return communication_drv_send_raw(frame, (uint8_t) (angle_value_len + 1u));
-}
+	memcpy(&buf[len], digits, ndigits);
+	len += ndigits;
 
-bool communication_drv_send_angle_int(CommAngleId angle_id, int16_t angle_value) {
-	char value[COMM_MAX_ANGLE_VALUE_LEN];
-	uint8_t value_len = comm_format_int(angle_value, value);
+	buf[len++] = '\r';
+	buf[len++] = '\n';
 
-	if (value_len == 0u) {
-		return false;
-	}
-
-	return communication_drv_send_angle_ascii(angle_id, value, value_len);
+	UART_data_transmit(comm_uart_id, (unsigned char *) buf, len);
 }
 
 bool communication_drv_send_raw(const uint8_t *data, uint8_t length) {
 	if ((data == NULL) || (length == 0u) || !comm_is_initialized() || !UART_tstatus(comm_uart_id)) {
 		return false;
 	}
-
 	return UART_data_transmit(comm_uart_id, (unsigned char *) data, length) == length;
 }
 
@@ -120,15 +143,12 @@ static bool comm_is_valid_angle_ascii(const char *value, uint8_t length) {
 	if ((value == NULL) || (length == 0u) || (length > COMM_MAX_ANGLE_VALUE_LEN)) {
 		return false;
 	}
-
 	if ((value[0] == '-') || (value[0] == '+')) {
 		if (length == 1u) {
 			return false;
 		}
-
 		digit_start = 1u;
 	}
-
 	for (uint8_t i = digit_start; i < length; i++) {
 		if ((value[i] < '0') || (value[i] > '9')) {
 			return false;
@@ -150,7 +170,6 @@ static uint8_t comm_format_int(int16_t value, char *out) {
 	} else {
 		magnitude = (uint16_t) value;
 	}
-
 	do {
 		if ((length + reversed_len) >= COMM_MAX_ANGLE_VALUE_LEN) {
 			return 0u;
@@ -159,7 +178,6 @@ static uint8_t comm_format_int(int16_t value, char *out) {
 		reversed[reversed_len++] = (char) ('0' + (magnitude % 10u));
 		magnitude /= 10u;
 	} while (magnitude > 0u);
-
 	while (reversed_len > 0u) {
 		out[length++] = reversed[--reversed_len];
 	}

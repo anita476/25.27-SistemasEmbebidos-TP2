@@ -1,11 +1,8 @@
 #include "include/can_comm.h"
-#include "../MCAL/include/uart.h"
 #include "include/board_led.h"
+#include "include/communication.h"
 #include <stdint.h>
 #include <string.h>
-
-#define CAN_GROUP 0x101u
-#define UART_ID 0u /* UART peripheral to use            */
 
 #define UART_BUF_SIZE 16u
 static void process_led_cmd(uint8_t led_bits);
@@ -51,7 +48,7 @@ bool process_can_frame(CanFrame_t frame) {
 			buf[pos++] = led_byte;
 			buf[pos++] = '\r';
 			buf[pos++] = '\n';
-			UART_data_transmit(UART_ID, (unsigned char *) buf, pos);
+			communication_drv_send_raw((unsigned char *) buf, pos);
 		}
 		return true;
 	}
@@ -86,7 +83,51 @@ bool process_can_frame(CanFrame_t frame) {
 	buf[pos++] = '\r';
 	buf[pos++] = '\n';
 
-	UART_data_transmit(UART_ID, (unsigned char *) buf, pos);
+	communication_drv_send_raw((unsigned char *) buf, pos);
 
 	return true;
+}
+
+bool can_send_angle(angle_t value, char angle_id, can_tx_cb_t cb) {
+	static uint8_t buf[6]; /* 'R'/'C'/'O' + sign + up to 4 digits = 6 max, but
+					   angle_t is int16_t so max is ±32767 = 5 bytes      */
+	uint8_t len = 0;
+
+	/* first byte: angle identifier */
+	buf[len++] = (uint8_t) angle_id;
+
+	/* sign */
+	if (value < 0) {
+		buf[len++] = '-';
+		value = (angle_t) (-value);
+	} else {
+		buf[len++] = '+';
+	}
+
+	/* absolute value as ASCII digits, no leading zeros */
+	char digits[5];
+	uint8_t ndigits = 0;
+	uint16_t uval = (uint16_t) value;
+
+	if (uval == 0) {
+		digits[ndigits++] = '0';
+	} else {
+		while (uval > 0) {
+			digits[ndigits++] = (char) ('0' + (uval % 10));
+			uval /= 10;
+		}
+		/* reverse */
+		for (uint8_t i = 0; i < ndigits / 2; i++) {
+			char tmp = digits[i];
+			digits[i] = digits[ndigits - 1 - i];
+			digits[ndigits - 1 - i] = tmp;
+		}
+	}
+
+	for (uint8_t i = 0; i < ndigits; i++) {
+		buf[len++] = (uint8_t) digits[i];
+	}
+
+	/* len = 1 (angleId) + 1 (sign) + ndigits, max 6 — fits in DLC ≤ 8 */
+	return can_send(buf, len, cb);
 }

@@ -38,69 +38,18 @@ static uint8_t uart_id;
 
 static CommLedCmd_t out_cmd;
 static bool can_tx_busy = false;
+static uint8_t angle_turn = 0u;
 
 static uint8_t buf[SENSOR_ASCII_BUF_SIZE];
 
 volatile static int FXOSflag = 0;
 sensor_t *angles;
-
 /*******************************************************************************
  * PRIVATE FUNCTION DECLARATIONS
  ******************************************************************************/
 static EVENT App_CaptureEvent(void);
 static void on_can_tx_done(bool success);
 
-/* todo make them diff messages ! */
-uint8_t sensor_to_ascii(const sensor_t *sensor, uint8_t *buf, uint8_t buf_size) {
-	if (sensor == NULL || buf == NULL) {
-		return 0u;
-	}
-
-	/* Each angle: id(1) + sign(1) + up to 3 digits + \r\n = 7 bytes max
-	 * 3 angles = 21 bytes max                                            */
-	if (buf_size < 21u) {
-		return 0u;
-	}
-
-	const struct {
-		char id;
-		angle_t val;
-	} angles[3] = {
-		{'R', sensor->roll},
-		{'C', sensor->pitch},
-		{'O', sensor->yaw},
-	};
-
-	uint8_t pos = 0u;
-
-	for (uint8_t i = 0u; i < 3u; i++) {
-		angle_t val = angles[i].val;
-
-		/* ID character */
-		buf[pos++] = (uint8_t) angles[i].id;
-
-		/* Sign */
-		if (val < 0) {
-			buf[pos++] = '-';
-			val = -val;
-		} else {
-			buf[pos++] = '+';
-		}
-
-		if (val >= 100) {
-			buf[pos++] = (uint8_t) ('0' + (val / 100) % 10);
-		}
-		if (val >= 10) {
-			buf[pos++] = (uint8_t) ('0' + (val / 10) % 10);
-		}
-		buf[pos++] = (uint8_t) ('0' + (val % 10));
-
-		buf[pos++] = '\r';
-		buf[pos++] = '\n';
-	}
-
-	return pos;
-}
 /*******************************************************************************
  * GLOBAL FUNCTION DEFINITIONS
  ******************************************************************************/
@@ -109,10 +58,11 @@ uint8_t sensor_to_ascii(const sensor_t *sensor, uint8_t *buf, uint8_t buf_size) 
 void App_Init(void) {
 	timer_drv_init();
 	board_led_drv_init();
-
+	if (!communication_drv_init()) {
+		board_led_drv_state(RED, true);
+	}
 	id = timer_drv_get_id();
 	timer_drv_start(id, 2000, TIM_MODE_SINGLESHOT, NULL);
-	uart_id = UART_drv_instance_init(PORTNUM2PIN(PB, 16), PORTNUM2PIN(PB, 17), BAUDRATE);
 	g_app_ctx.current_state = FSM_GetInitState();
 }
 
@@ -135,7 +85,6 @@ void App_Run(void) {
 		timer_drv_update(); /* must be called every iteration */
 		can_process();		/* must be called every iteration */
 		angles = FXOSgetAngles();
-
 		CanFrame_t rx_frame;
 
 		/* process all available can franes */
@@ -147,17 +96,35 @@ void App_Run(void) {
 
 		if (timer_drv_expired(id)) {
 			timer_drv_start(id, 2000, TIM_MODE_SINGLESHOT, NULL);
-			uint8_t len = sensor_to_ascii(angles, buf, sizeof(buf));
-			UART_data_transmit(uart_id, (unsigned char *) buf, len);
+
+			communication_drv_send_angle('C', angles->pitch);
+			communication_drv_send_angle('R', angles->roll);
+			communication_drv_send_angle('O', angles->yaw);
+
 			if (!can_tx_busy) {
-				if (can_send((const uint8_t *) "101C-100", 2, on_can_tx_done)) {
+				bool sent = false;
+				switch (angle_turn) {
+					case 0u:
+						sent = can_send_angle(angles->roll, 'R', on_can_tx_done);
+						break;
+					case 1u:
+						sent = can_send_angle(angles->pitch, 'C', on_can_tx_done);
+						break;
+					case 2u:
+						sent = can_send_angle(angles->yaw, 'O', on_can_tx_done);
+						break;
+					default:
+						angle_turn = 0u;
+						break;
+				}
+				if (sent) {
 					can_tx_busy = true;
+					angle_turn = (angle_turn + 1u) % 3u;
 				}
 			}
 		}
 	}
 }
-
 /*******************************************************************************
  * PRIVATE FUNCTION DEFINITIONS
  ******************************************************************************/
