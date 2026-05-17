@@ -119,7 +119,7 @@ void _acc_magn_read_data(void) {
 	// data.yaw = (atan2f(mag_y_comp, mag_x_comp) * 180.0f / (float) M_PI);
 	// leave yaw incomplete for now ...
 	data.yaw = 0;
-	data.pitch = pitch_rad * 180.0f / (float) M_PI;
+	data.pitch = ((-1) * pitch_rad * 180.0f / (float) M_PI);
 	data.roll = roll_rad * 180.0f / (float) M_PI;
 
 	// Start next read cycle

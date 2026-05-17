@@ -11,9 +11,13 @@
 - [x] UART drv 
 - [x] SPI drv
 - [x] I2C drv
-- [ ] Terminal uart prot application -> in progress, missing parsing update
-- [ ] Can controller driver -> blocking for now 
+- [x] Terminal uart prot application 
+- [x] Can controller driver -> SEMI blocking for now 
 - [x] Acc driver
 - [x] Misc led color funcs
-- [ ] Logic level protocol -> in progress
+- [x] Logic level protocol
+- [ ] Fix can controller bug -> freeze message send after moving board??
+- [ ] test pins
+- [ ] Complete user manual and driver structure 
+- [ ] Improve can controller drv
 
