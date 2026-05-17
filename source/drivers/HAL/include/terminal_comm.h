@@ -1,7 +1,7 @@
-#ifndef _COMMUNICATION_H_
-#define _COMMUNICATION_H_
+#ifndef _TERMINAL_COMM_H_
+#define _TERMINAL_COMM_H_
 
-#include "FXOS.h"
+#include "acc_magn.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -21,13 +21,13 @@ typedef struct {
  * @brief Initialize communication driver (internally uses uart0)
  * @returns true on success, false if not
  */
-bool communication_drv_init();
+bool terminal_comm_drv_init();
 
 /**
- * @brief Polls uart0 and decodes a led command. nonblocking but should be called from main loop
+ * @brief Consults uart0 and decodes a led command. nonblocking but should be called from main loop
  * @returns true when a valid LED command was decoded into out_cmd, false if not
  */
-bool communication_drv_receive_led_cmd(CommLedCmd_t *out_cmd);
+bool terminal_comm_drv_receive_led_cmd(CommLedCmd_t *out_cmd);
 
 /**
  * @brief Send an angle frame using an already formatted ASCII value.
@@ -40,11 +40,11 @@ bool communication_drv_receive_led_cmd(CommLedCmd_t *out_cmd);
  *
  * Valid examples: "R-34", "C0", "O67", "R+138", "R00", "C-072".
  */
-void communication_drv_send_angle(char angle_id, angle_t value);
+void terminal_comm_drv_send_angle(char angle_id, angle_t value);
 
 /**
  * @brief Send raw bytes through the communication UART.
  */
-bool communication_drv_send_raw(const uint8_t *data, uint8_t length);
+bool terminal_comm_drv_send_raw(const uint8_t *data, uint8_t length);
 
-#endif /* _COMMUNICATION_H_ */
+#endif /* _TERMINAL_COMM_H_ */

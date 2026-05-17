@@ -26,7 +26,7 @@ class Station:
                 angleIndex = angleIdentifier
             self.angles[angleIndex] = value
             self.roll = self.angles[0]
-            self.pitch = self.angles[1]
+            self.pitch = (-1)* self.angles[1] # align station pitch sign to spec 
             self.yaw = self.angles[2]
             return True
 

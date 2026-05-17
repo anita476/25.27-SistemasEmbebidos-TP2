@@ -1,6 +1,6 @@
 #ifndef _CAN_CONTROLLER_H
 #define _CAN_CONTROLLER_H
-#include "FXOS.h"
+#include "acc_magn.h"
 
 /******************************************************************************
  * INCLUDES

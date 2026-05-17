@@ -1,5 +1,5 @@
-#ifndef _CAN_COMM_H_
-#define _CAN_COMM_H_
+#ifndef _bus_comm_H_
+#define _bus_comm_H_
 #include "can_controller.h"
 #define CAN_GROUP 0x101u
 

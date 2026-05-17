@@ -1,6 +1,6 @@
-#include "include/can_comm.h"
+#include "include/bus_comm.h"
 #include "include/board_led.h"
-#include "include/communication.h"
+#include "include/terminal_comm.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -48,7 +48,7 @@ bool process_can_frame(CanFrame_t frame) {
 			buf[pos++] = led_byte;
 			buf[pos++] = '\r';
 			buf[pos++] = '\n';
-			communication_drv_send_raw((unsigned char *) buf, pos);
+			terminal_comm_drv_send_raw((unsigned char *) buf, pos);
 		}
 		return true;
 	}
@@ -83,7 +83,7 @@ bool process_can_frame(CanFrame_t frame) {
 	buf[pos++] = '\r';
 	buf[pos++] = '\n';
 
-	communication_drv_send_raw((unsigned char *) buf, pos);
+	terminal_comm_drv_send_raw((unsigned char *) buf, pos);
 
 	return true;
 }

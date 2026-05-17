@@ -3,6 +3,7 @@
 #include "include/board.h"
 
 static const int leds[COLOR_NUM] = {PIN_LED_RED, PIN_LED_GREEN, PIN_LED_BLUE};
+
 /**
  * @brief initializes the board led driver
  */

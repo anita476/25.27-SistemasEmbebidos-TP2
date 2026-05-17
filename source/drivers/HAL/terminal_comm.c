@@ -1,7 +1,7 @@
-#include "include/communication.h"
+#include "include/terminal_comm.h"
 #include "../MCAL/include/uart.h"
 #include "include/board.h"
-#include "include/can_comm.h"
+#include "include/bus_comm.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -30,7 +30,7 @@ static bool comm_is_valid_angle_ascii(const char *value, uint8_t length);
 static uint8_t comm_format_int(int16_t value, char *out);
 /*******************************************/
 
-bool communication_drv_init() {
+bool terminal_comm_drv_init() {
 	uint32_t uart_id = UART_drv_instance_init(PIN_UART0_RX, PIN_UART0_TX, UART0_BAUDRATE);
 
 	if (uart_id == INVALID_UART) {
@@ -53,7 +53,7 @@ bool communication_drv_init() {
  *
  * @returns true when a valid LED command was decoded into out_cmd.
  */
-bool communication_drv_receive_led_cmd(CommLedCmd_t *out_cmd) {
+bool terminal_comm_drv_receive_led_cmd(CommLedCmd_t *out_cmd) {
 	uint8_t rx_buffer[8];
 	if ((out_cmd == NULL) || !comm_is_initialized() || !UART_rstatus(comm_uart_id)) {
 		return false;
@@ -73,7 +73,7 @@ bool communication_drv_receive_led_cmd(CommLedCmd_t *out_cmd) {
 }
 
 // @todo revisar... -> looks fine
-void communication_drv_send_angle(char angle_id, angle_t value) {
+void terminal_comm_drv_send_angle(char angle_id, angle_t value) {
 	static char buf[ANGLE_BUF_SIZE];
 	uint8_t len = 0;
 
@@ -121,7 +121,7 @@ void communication_drv_send_angle(char angle_id, angle_t value) {
 	UART_data_transmit(comm_uart_id, (unsigned char *) buf, len);
 }
 
-bool communication_drv_send_raw(const uint8_t *data, uint8_t length) {
+bool terminal_comm_drv_send_raw(const uint8_t *data, uint8_t length) {
 	if ((data == NULL) || (length == 0u) || !comm_is_initialized() || !UART_tstatus(comm_uart_id)) {
 		return false;
 	}
