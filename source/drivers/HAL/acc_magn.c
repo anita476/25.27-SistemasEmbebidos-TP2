@@ -1,6 +1,6 @@
 #include "../HAL/include/acc_magn.h"
 #include "../../../SDK/CMSIS/cmsis_gcc.h"
-#include "../MCAL/include/I2C.h"
+#include "../MCAL/include/i2c.h"
 #include "../MCAL/include/pisr.h"
 #include <math.h>
 
@@ -35,7 +35,7 @@ void _acc_magn_task(void);
 void _acc_magn_read_data(void);
 
 void acc_magn_drv_init(void) {
-	I2C_Init();
+	i2c_drv_init();
 	fxos_state = acc_magn_drv_init_START;
 	pisr_drv_register(_acc_magn_task, 25);
 }
@@ -45,7 +45,7 @@ sensor_t *acc_magn_drv_get_angles(void) {
 }
 
 void _acc_magn_task(void) {
-	if (I2C_GetStatus() == Busy)
+	if (i2c_get_status() == Busy)
 		return; // wait for previous transaction
 
 	switch (fxos_state) {
@@ -53,7 +53,7 @@ void _acc_magn_task(void) {
 			_acc_magn_read_data();
 			break;
 		case acc_magn_drv_init_START:
-			I2C_StartComm(&ID, 1, FXOS8700CQ_ADDR, FXOS8700CQ_WHOAMI, Read);
+			i2c_drv_start_comm(&ID, 1, FXOS8700CQ_ADDR, FXOS8700CQ_WHOAMI, Read);
 			fxos_state = acc_magn_drv_init_WHOAMI;
 			break;
 
@@ -62,37 +62,37 @@ void _acc_magn_task(void) {
 				break;
 			}
 			databyte = 0x00;
-			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_CTRL_REG1, Write);
+			i2c_drv_start_comm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_CTRL_REG1, Write);
 			fxos_state = acc_magn_drv_init_STANDBY;
 			break;
 
 		case acc_magn_drv_init_STANDBY:
 			databyte = 0x9F; // Habilitar autocalibracion para que funcione bien el magnetometro
-			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_M_CTRL_REG1, Write);
+			i2c_drv_start_comm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_M_CTRL_REG1, Write);
 			fxos_state = acc_magn_drv_init_M_CTRL1;
 			break;
 
 		case acc_magn_drv_init_M_CTRL1:
 			databyte = 0x20;
-			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_M_CTRL_REG2, Write);
+			i2c_drv_start_comm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_M_CTRL_REG2, Write);
 			fxos_state = acc_magn_drv_init_M_CTRL2;
 			break;
 
 		case acc_magn_drv_init_M_CTRL2:
 			databyte = 0x01;
-			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_XYZ_DATA_CFG, Write);
+			i2c_drv_start_comm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_XYZ_DATA_CFG, Write);
 			fxos_state = acc_magn_drv_init_XYZ_CFG;
 			break;
 
 		case acc_magn_drv_init_XYZ_CFG:
 			databyte = 0x0D;
-			I2C_StartComm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_CTRL_REG1, Write);
+			i2c_drv_start_comm(&databyte, 1, FXOS8700CQ_ADDR, FXOS8700CQ_CTRL_REG1, Write);
 			fxos_state = acc_magn_drv_init_ACTIVE;
 			break;
 
 		case acc_magn_drv_init_ACTIVE:
 			// Start the first I2C read cycle before moving to RUNNING state
-			I2C_StartComm(databuffer, FXOS8700CQ_READ_LEN, FXOS8700CQ_ADDR, FXOS8700CQ_STATUS, Read);
+			i2c_drv_start_comm(databuffer, FXOS8700CQ_READ_LEN, FXOS8700CQ_ADDR, FXOS8700CQ_STATUS, Read);
 			fxos_state = FXOS_RUNNING;
 			break;
 	}
@@ -123,5 +123,5 @@ void _acc_magn_read_data(void) {
 	data.roll = roll_rad * 180.0f / (float) M_PI;
 
 	// Start next read cycle
-	I2C_StartComm(databuffer, FXOS8700CQ_READ_LEN, FXOS8700CQ_ADDR, FXOS8700CQ_STATUS, Read);
+	i2c_drv_start_comm(databuffer, FXOS8700CQ_READ_LEN, FXOS8700CQ_ADDR, FXOS8700CQ_STATUS, Read);
 }

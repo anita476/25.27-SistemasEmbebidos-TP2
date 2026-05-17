@@ -1,4 +1,4 @@
-#include "include/I2C.h"
+#include "include/i2c.h"
 #include "include/gpio.h"
 #include "include/port.h"
 
@@ -22,7 +22,7 @@ static IRQn_Type const I2C_IRQn[] = I2C_IRQS;		 // Array de IRQs para los modulo
 
 uint8_t dummy;
 
-void I2C_Init() {
+void i2c_drv_init() {
 	// Clock gating
 	SIM->SCGC4 |= SIM_SCGC4_I2C0(HIGH);
 	SIM->SCGC5 |= SIM_SCGC5_PORTE(HIGH);
@@ -47,8 +47,8 @@ void I2C_Init() {
 	I2C.status = Done;
 }
 
-I2C_Status_t I2C_StartComm(uint8_t *data_arr, uint8_t size, I2C_Address_t address, I2C_Address_t reg_address,
-						   I2C_RW_t RW) {
+I2CStatus_t i2c_drv_start_comm(uint8_t *data_arr, uint8_t size, I2CAddress_t address, I2CAddress_t reg_address,
+							   I2CAction_t RW) {
 	if (data_arr != NULL && size) {
 		I2C.status = Busy;
 		I2C.address = address;
@@ -69,7 +69,7 @@ I2C_Status_t I2C_StartComm(uint8_t *data_arr, uint8_t size, I2C_Address_t addres
 	return I2C.status;
 }
 
-I2C_Status_t I2C_GetStatus() {
+I2CStatus_t i2c_get_status() {
 	return I2C.status;
 }
 

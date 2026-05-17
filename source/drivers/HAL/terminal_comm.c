@@ -27,7 +27,7 @@ static uint8_t comm_uart_id = INVALID_UART;
 static bool comm_is_initialized(void);
 static bool comm_is_valid_angle_id(CommAngleId angle_id);
 static bool comm_is_valid_angle_ascii(const char *value, uint8_t length);
-static uint8_t comm_format_int(int16_t value, char *out);
+
 /*******************************************/
 
 bool terminal_comm_drv_init() {
@@ -156,31 +156,4 @@ static bool comm_is_valid_angle_ascii(const char *value, uint8_t length) {
 	}
 
 	return true;
-}
-
-static uint8_t comm_format_int(int16_t value, char *out) {
-	uint8_t length = 0u;
-	uint16_t magnitude;
-	char reversed[COMM_MAX_ANGLE_VALUE_LEN];
-	uint8_t reversed_len = 0u;
-
-	if (value < 0) {
-		out[length++] = '-';
-		magnitude = (uint16_t) (-value);
-	} else {
-		magnitude = (uint16_t) value;
-	}
-	do {
-		if ((length + reversed_len) >= COMM_MAX_ANGLE_VALUE_LEN) {
-			return 0u;
-		}
-
-		reversed[reversed_len++] = (char) ('0' + (magnitude % 10u));
-		magnitude /= 10u;
-	} while (magnitude > 0u);
-	while (reversed_len > 0u) {
-		out[length++] = reversed[--reversed_len];
-	}
-
-	return length;
 }
