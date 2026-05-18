@@ -14,7 +14,7 @@
 
 #define ANGLE_TYPE_COUNT 2U
 #define ANGLE_CHANGE_PERIOD_MS 50U		/* max frequency      */
-#define ANGLE_KEEPALIVE_PERIOD_MS 2000U /* minimum frequency              */
+#define ANGLE_KEEPALIVE_PERIOD_MS 1000U /* minimum frequency      @todo because they are being sent double now..    */
 #define ANGLE_CHANGE_THRESHOLD 5
 
 typedef struct {
@@ -191,7 +191,7 @@ static void send_pending(void) {
 
 		g_tx_busy = true;
 		g_tx_channel = (uint8_t) ((idx + 1U) % ANGLE_TYPE_COUNT);
-		timer_drv_start(g_tx_watchdog_timer, 20U, TIM_MODE_SINGLESHOT, NULL);
+		timer_drv_start(g_tx_watchdog_timer, 50U, TIM_MODE_SINGLESHOT, NULL);
 
 		if (!can_send_angle(a->pending_value, a->id, on_can_tx_done)) {
 			g_tx_busy = false;
@@ -206,7 +206,12 @@ static void send_pending(void) {
 
 static void on_can_tx_done(bool success) {
 	g_tx_busy = false;
-	if (success) {
+	if (!success) {
+		/* restore the pending flag for the last sent angle
+		 * so it can be retried on the next send_pending()  */
+		uint8_t failed_idx = (g_tx_channel - 1 + ANGLE_TYPE_COUNT) % ANGLE_TYPE_COUNT;
+		g_angles[failed_idx].pending = true;
+	} else {
 		send_pending();
 	}
 }

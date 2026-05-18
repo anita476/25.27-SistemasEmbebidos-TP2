@@ -273,7 +273,12 @@ void can_recover(void) {
 	bit_modify(MCP_REG_TXB0CTRL, 0x08U, 0x00U);		 /* clear TXREQ bit — abort TX */
 	bit_modify(MCP_REG_CANINTF, MCP_INT_TX0, 0x00U); /* clear TX interrupt flag */
 	tx_busy = false;
-	tx_cb = NULL;
+
+	if (tx_cb != NULL) {
+		can_tx_cb_t cb = tx_cb;
+		tx_cb = NULL;
+		cb(false); /* transmission failed */
+	}
 }
 
 void can_process(void) {
