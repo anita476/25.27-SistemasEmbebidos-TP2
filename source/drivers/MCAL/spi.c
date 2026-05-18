@@ -1,6 +1,7 @@
 #include "include/spi.h"
 #include "include/gpio.h"
 #include "include/port.h"
+#include "include/test_pin.h"
 #include <stdint.h>
 
 #define SPI_HAL_DEFAULT_BAUDRATE 1000000UL // 1 MHz
@@ -99,6 +100,7 @@ static void _spi_drain_rx_fifo(uint8_t spi_num);
 /********************************* FUNCTIONS***********************************/
 
 bool spi_drv_init(uint8_t spi_num, uint32_t baud) {
+	tp_spi_init();
 	// check spi num
 	if (spi_num >= SPI_COUNT || spi_state[spi_num].active) {
 		return false;
@@ -317,6 +319,7 @@ uint8_t spi_drv_rx_available(uint8_t spi_num) {
 /*****************************************INTERRUPTS  ROUTINES******************************************/
 
 static void _spi_irq_handler(uint8_t spi_num) {
+	gpio_drv_write(SPI_TP, HIGH);
 	SPI_Type *spi = spi_ptrs[spi_num];
 	uint32_t sr = spi->SR;
 	SPIState_t *st = &spi_state[spi_num];
@@ -387,6 +390,7 @@ static void _spi_irq_handler(uint8_t spi_num) {
 			spi->RSER &= ~SPI_RSER_TFFF_RE_MASK;
 		}
 	}
+	gpio_drv_write(SPI_TP, LOW);
 }
 
 void SPI0_IRQHandler(void) {

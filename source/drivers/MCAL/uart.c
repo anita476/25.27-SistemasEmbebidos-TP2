@@ -1,5 +1,7 @@
 #include "include/uart.h"
+#include "include/gpio.h"
 #include "include/port.h"
+#include "include/test_pin.h"
 #define UART_ALTS 5
 #define MAX_UART_USE 5 /* Max number of uarts that can be in use at any given time*/
 #define BUFFER_CHAR_SIZE 128U
@@ -199,6 +201,7 @@ bool UART_rstatus(uint8_t uart_id) {
 }
 
 void UART_RX_TX_ISR(uint8_t id) {
+	gpio_drv_write(UART_TP, HIGH);
 	UART_Type *uart = uart_ptrs_NBF[id];
 	uint8_t s1 = uart->S1;
 
@@ -230,6 +233,7 @@ void UART_RX_TX_ISR(uint8_t id) {
 			uart->C2 &= ~UART_C2_TIE_MASK;
 		}
 	}
+	gpio_drv_write(UART_TP, LOW);
 }
 
 /************* UART INTERRUPT HANDLERS ********************/

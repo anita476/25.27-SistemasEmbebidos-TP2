@@ -24,7 +24,7 @@ bool pisr_drv_register(pisrCallbackPtr_t fun, unsigned int period) {
 	if (!active) {
 		// if it wasnt, activate
 		/* we also activate test pin here */
-		test_pin_init();
+		tp_generic_init();
 		SysTick->CTRL = 0x00; // reset everything
 		SysTick->LOAD = (TICK_MS * PISR_FREQUENCY_HZ * 100) - 1;
 		SysTick->VAL = 0x00; // current value
