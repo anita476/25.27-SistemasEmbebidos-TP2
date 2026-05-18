@@ -6,7 +6,6 @@
 #include "../drivers/HAL/include/acc_magn.h"
 #include "../drivers/HAL/include/board_led.h"
 #include "../drivers/HAL/include/bus_comm.h"
-#include "../drivers/HAL/include/can_controller.h"
 #include "../drivers/HAL/include/terminal_comm.h"
 #include "../drivers/HAL/include/timer.h"
 #include "tests/include/spi_test.h"
@@ -31,6 +30,7 @@ static uint32_t g_keepalive_timer;
 
 static uint8_t g_tx_channel = 0U;
 static bool g_tx_busy = false;
+static uint32_t g_tx_watchdog_timer;
 
 static void angles_init(void);
 static void angles_check_rate(void);
@@ -121,6 +121,7 @@ static void angles_init(void) {
 	}
 	g_rate_timer = timer_drv_get_id();
 	g_keepalive_timer = timer_drv_get_id();
+	g_tx_watchdog_timer = timer_drv_get_id();
 	timer_drv_start(g_rate_timer, ANGLE_CHANGE_PERIOD_MS, TIM_MODE_SINGLESHOT, NULL);
 	timer_drv_start(g_keepalive_timer, ANGLE_KEEPALIVE_PERIOD_MS, TIM_MODE_SINGLESHOT, NULL);
 }
@@ -165,8 +166,16 @@ static void send_pending(void) {
 	}
 
 	/* CAN pass -> needs to be one frame at a time since its a blocking func one frame at a time */
-	if (g_tx_busy)
-		return;
+	if (g_tx_busy) {
+		if (timer_drv_expired(g_tx_watchdog_timer)) {
+			/* TX completion interrupt never fired -> RTS was likely lost? to
+			 * Next loop iteration will retry */
+			bus_recover();
+			g_tx_busy = false;
+		} else {
+			return;
+		}
+	}
 
 	for (uint8_t i = 0U; i < 3U; i++) {
 		uint8_t idx = (g_tx_channel + i) % 3U;
@@ -177,6 +186,7 @@ static void send_pending(void) {
 
 		g_tx_busy = true;
 		g_tx_channel = (uint8_t) ((idx + 1U) % 3U);
+		timer_drv_start(g_tx_watchdog_timer, 20U, TIM_MODE_SINGLESHOT, NULL);
 
 		if (!can_send_angle(a->pending_value, a->id, on_can_tx_done)) {
 			g_tx_busy = false;

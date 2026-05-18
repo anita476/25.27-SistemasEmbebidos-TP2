@@ -131,3 +131,7 @@ bool can_send_angle(angle_t value, char angle_id, can_tx_cb_t cb) {
 	/* len = 1 (angleId) + 1 (sign) + ndigits, max 6 — fits in DLC ≤ 8 */
 	return can_send(buf, len, cb);
 }
+
+void bus_recover(void) {
+	can_recover();
+}

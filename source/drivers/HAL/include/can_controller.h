@@ -104,4 +104,6 @@ bool can_tx_busy_status(void);
  */
 bool can_irq_busy_status(void);
 
+void can_recover(void);
+
 #endif

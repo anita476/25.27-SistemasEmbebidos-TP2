@@ -9,4 +9,6 @@
  */
 bool process_can_frame(CanFrame_t frame);
 
+void bus_recover(void);
+
 #endif

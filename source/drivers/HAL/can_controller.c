@@ -267,6 +267,15 @@ bool can_controller_drv_init(void) {
 	return true;
 }
 
+void can_recover(void) {
+	/* Abort any pending TX, clear the TX interrupt flag, and reset
+	 * the chip-level busy flag so can_send() can be called again. */
+	bit_modify(MCP_REG_TXB0CTRL, 0x08U, 0x00U);		 /* clear TXREQ bit — abort TX */
+	bit_modify(MCP_REG_CANINTF, MCP_INT_TX0, 0x00U); /* clear TX interrupt flag */
+	tx_busy = false;
+	tx_cb = NULL;
+}
+
 void can_process(void) {
 	if (!can_initialized)
 		return;
