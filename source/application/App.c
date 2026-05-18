@@ -92,6 +92,10 @@ void App_Run(void) {
 				board_led_drv_state(RED, led_cmd.red);
 				board_led_drv_state(GREEN, led_cmd.green);
 				board_led_drv_state(BLUE, led_cmd.blue);
+			} else {
+				uint8_t led_byte = (0x80u) | ((led_cmd.group & 0x07u) << 4u) | (led_cmd.red ? 0x04u : 0u) |
+								   (led_cmd.green ? 0x02u : 0u) | (led_cmd.blue ? 0x01u : 0u);
+				can_send(&led_byte, 1u, NULL);
 			}
 		}
 		if (timer_drv_expired(g_rate_timer)) {
