@@ -116,7 +116,7 @@ static bool rx_queue_push(const CanFrame_t *frame);
 static bool rx_queue_pop(CanFrame_t *frame);
 static void service_rx0(void);
 
-/********* contract  */
+/********* contract  ******/
 bool can_controller_drv_init(void) {
 	tp_can_init();
 	if (can_initialized)
@@ -170,12 +170,6 @@ bool can_controller_drv_init(void) {
 
 	if (!reg_write(MCP_REG_CNF1, &cnf1, 1))
 		return false;
-
-	/** @todo implement filters  */
-
-	// if (!bit_modify(MCP_REG_RXB0CTRL, MCP_RXM_MASK, MCP_RXM_ANY)) {
-	//	return false;
-	// }
 
 	/**
 	 * ACCEPT only IDs 0x100 - 0x107
@@ -272,7 +266,7 @@ bool can_controller_drv_init(void) {
 void can_recover(void) {
 	/* Abort any pending TX, clear the TX interrupt flag, and reset
 	 * the chip-level busy flag so can_send() can be called again. */
-	bit_modify(MCP_REG_TXB0CTRL, 0x08U, 0x00U);		 /* clear TXREQ bit — abort TX */
+	bit_modify(MCP_REG_TXB0CTRL, 0x08U, 0x00U);		 /* clear TXREQ bit , abort TX */
 	bit_modify(MCP_REG_CANINTF, MCP_INT_TX0, 0x00U); /* clear TX interrupt flag */
 	tx_busy = false;
 
@@ -376,7 +370,7 @@ void can_gpio_irq(void) {
 	gpio_drv_write(CAN_TP, LOW);
 }
 
-/********* HELPERS  *********/
+/************************** HELPERS  **************************/
 
 static void service_interrupts(uint8_t intf) {
 	if (intf & MCP_INT_TX0)
@@ -399,11 +393,9 @@ static void service_tx0(void) {
 static bool reg_read(uint8_t reg, uint8_t *out) {
 	spi_tx_buf[0] = MCP_READ;
 	spi_tx_buf[1] = reg;
-
 	if (!spi_transact_blocking(spi_tx_buf, 2, spi_rx_buf, 3)) {
 		return false;
 	}
-
 	*out = spi_rx_buf[2];
 
 	return true;
@@ -412,7 +404,6 @@ static bool reg_read(uint8_t reg, uint8_t *out) {
 static bool reg_write(uint8_t reg, const uint8_t *data, uint8_t len) {
 	spi_tx_buf[0] = MCP_WRITE;
 	spi_tx_buf[1] = reg;
-
 	memcpy(&spi_tx_buf[2], data, len);
 
 	return spi_write_blocking(spi_tx_buf, len + 2);
@@ -429,13 +420,10 @@ static bool bit_modify(uint8_t reg, uint8_t mask, uint8_t data) {
 
 static bool spi_write_blocking(const uint8_t *tx, size_t len) {
 	static volatile bool done;
-
 	done = false;
-
 	if (!spi_drv_write(CAN_SPI_NUM, slave_num, tx, len, &done)) {
 		return false;
 	}
-
 	while (!done) {
 	}
 
@@ -445,12 +433,12 @@ static bool spi_write_blocking(const uint8_t *tx, size_t len) {
 static bool spi_transact_blocking(const uint8_t *tx, size_t tx_len, uint8_t *rx, size_t rx_len) {
 	static volatile bool done;
 	done = false;
-
 	if (!spi_drv_transact(CAN_SPI_NUM, slave_num, tx, tx_len, rx_len, &done)) {
 		return false;
 	}
 	while (!done) {
 	}
+
 	return spi_drv_read(CAN_SPI_NUM, slave_num, rx, rx_len);
 }
 
@@ -469,7 +457,6 @@ static bool rx_queue_full(void) {
 static bool rx_queue_push(const CanFrame_t *frame) {
 	if (rx_queue_full())
 		return false;
-
 	rx_queue.buffer[rx_queue.head] = *frame;
 	rx_queue.head = rx_next(rx_queue.head);
 

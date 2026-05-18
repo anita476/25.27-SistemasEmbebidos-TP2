@@ -39,7 +39,6 @@ bool uart_test(uint8_t uart_id) {
 		}
 	}
 
-	// Optional: final state
 	const char *done_msg = "UART test finished.\r\n";
 	UART_data_transmit(uart_id, (unsigned char *) done_msg, strlen(done_msg));
 

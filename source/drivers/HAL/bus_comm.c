@@ -89,8 +89,7 @@ bool process_can_frame(CanFrame_t frame) {
 }
 
 bool can_send_angle(angle_t value, char angle_id, can_tx_cb_t cb) {
-	static uint8_t buf[6]; /* 'R'/'C'/'O' + sign + up to 4 digits = 6 max, but
-					   angle_t is int16_t so max is ±32767 = 5 bytes      */
+	static uint8_t buf[6]; /* 'R'/'C'/'O' + sign + up to 4 digits = 6 max*/
 	uint8_t len = 0;
 
 	/* first byte: angle identifier */
@@ -123,12 +122,9 @@ bool can_send_angle(angle_t value, char angle_id, can_tx_cb_t cb) {
 			digits[ndigits - 1 - i] = tmp;
 		}
 	}
-
 	for (uint8_t i = 0; i < ndigits; i++) {
 		buf[len++] = (uint8_t) digits[i];
 	}
-
-	/* len = 1 (angleId) + 1 (sign) + ndigits, max 6 — fits in DLC ≤ 8 */
 	return can_send(buf, len, cb);
 }
 

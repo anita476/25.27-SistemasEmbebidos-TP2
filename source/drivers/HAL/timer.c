@@ -71,7 +71,7 @@ bool timer_drv_expired(timId_t id) {
 	if (id >= TIMERS_MAX_CANT || timers[id].state != TIM_EXPIRED)
 		return false;
 
-	/* reset to OCCUPIED — caller must timer_drv_start again to reuse      */
+	/* reset to OCCUPIED  */
 	timers[id].state = TIM_OCCUPIED;
 	return true;
 }

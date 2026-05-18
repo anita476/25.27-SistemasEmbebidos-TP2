@@ -35,24 +35,11 @@ static bool g_tx_busy = false;
 static uint32_t g_tx_watchdog_timer;
 
 static void angles_init(void);
+static int16_t angle_delta(angle_t current, angle_t reference);
 static void angles_check_rate(void);
 static void angles_check_keepalive(void);
 static void send_pending(void);
 static void on_can_tx_done(bool success);
-
-/*
- * accounts for wrap-around at +-180°.
- * returns the shortest angular distance between two angle values
- */
-static int16_t angle_delta(angle_t current, angle_t reference) {
-	int16_t d = (int16_t) (current - reference);
-	/* wrap into (-180, 180] */
-	if (d > 180)
-		d -= 360;
-	if (d < -180)
-		d += 360;
-	return d;
-}
 
 void App_Init(void) {
 	timer_drv_init();
@@ -144,7 +131,7 @@ static void angles_check_rate(void) {
 			a->pending_value = current[i];
 			a->pending = true;
 			a->uart_done = false;
-			a->last_sent = current[i]; // Update reference immediately, not after send
+			a->last_sent = current[i];
 		}
 	}
 }
@@ -175,7 +162,7 @@ static void send_pending(void) {
 	if (g_tx_busy) {
 		if (timer_drv_expired(g_tx_watchdog_timer)) {
 			/* TX completion interrupt never fired -> RTS was likely lost? to
-			 * Next loop iteration will retry */
+			 * next loop iteration will retry */
 			bus_recover();
 			g_tx_busy = false;
 		} else {
@@ -215,4 +202,18 @@ static void on_can_tx_done(bool success) {
 	} else {
 		send_pending();
 	}
+}
+
+/*
+ * accounts for wrap-around at +-180°.
+ * returns the shortest angular distance between two angle values
+ */
+static int16_t angle_delta(angle_t current, angle_t reference) {
+	int16_t d = (int16_t) (current - reference);
+	/* wrap into (-180, 180] */
+	if (d > 180)
+		d -= 360;
+	if (d < -180)
+		d += 360;
+	return d;
 }
