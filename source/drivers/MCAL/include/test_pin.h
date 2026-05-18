@@ -5,15 +5,17 @@
 #define TP PORTNUM2PIN(PB, 2)	   /* test pin */
 #define UART_TP PORTNUM2PIN(PB, 3) /* for uart interrupt*/
 #define SPI_TP PORTNUM2PIN(PB, 10)
-#define GPIO_TP PORTNUM2PIN(PB, 11) /* for port interrupts in gpio*/
+#define CAN_TP PORTNUM2PIN(PB, 11) /* for port interrupts in gpio*/
+#define I2C_TP PORTNUM2PIN(PC, 11) /* for pripheral i2c interrupt */
 
 /**** TECHNICALLY isnt mcal, but bc its only associated with gpio and pisr @todo maybe change?  */
 void tp_generic_init(void);
 
-void tp_gpio_init(void);
+void tp_can_init(void);
 
 void tp_uart_init(void);
 
 void tp_spi_init(void); /* for spi specific interrupt*/
 
+void tp_i2c_init(void);
 #endif

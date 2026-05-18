@@ -133,7 +133,7 @@ void PORTE_IRQHandler(void) {
 
 static void _execute_callbacks(int port) {
 	/* TEST PIN */
-	gpio_drv_write(TP, HIGH);
+	// gpio_drv_write(TP, HIGH);
 	/*********** */
 	// Obs! In this case i dont need to cycle through the whole PORTX_ISFR, just checking the actual interrupts
 	// configured and checking isr is enough
@@ -147,5 +147,5 @@ static void _execute_callbacks(int port) {
 		}
 		i--;
 	}
-	gpio_drv_write(TP, LOW);
+	// gpio_drv_write(TP, LOW);
 }

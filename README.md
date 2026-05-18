@@ -31,9 +31,11 @@ El protocolo de comunicación serial está implementado en `protocol_handler.py`
 
 Se incluyen pines específicos para verificar la funcionalidad de las interrupciones:
 
-* `TP` `PTB2`, para interrupciones Systick
+* `TP` `PTB2`, para interrupciones Systick (incluye interrupción periódica de I2C)
 * `UART_TP` `PTB3`, SPI_TP `PTB10` para interrupciones de periféricos UART y SPI.
-* `GPIO_TP` para interrupciones dedicadas de puerto/gpio (incluye la interrupción de bus CAN e I2C)
+* `CAN_TP` `PTB11` para interrupciones dedicadas de puerto/gpio, configurada para la interrupción de CAN 
+* `I2C` `PTC11` para interrupción del periférico I2C 
+
 
 
 ### TiltNetworkTool

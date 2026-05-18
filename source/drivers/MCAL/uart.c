@@ -66,6 +66,7 @@ static void UART_set_baudrate(uint8_t uart_id, uint32_t baudrate);
 
 // @todo what are the accepted baudrates?
 uint32_t UART_drv_instance_init(pin_t RX_pin, pin_t TX_pin, int baudrate) {
+	tp_uart_init();
 	uint8_t id = find_uart_id(TX_pin, RX_pin);
 	if (id == INVALID_UART || uart_count_NBF >= MAX_UART_USE) {
 		return INVALID_UART;

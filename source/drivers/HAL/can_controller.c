@@ -6,6 +6,7 @@
 #include "include/can_controller.h"
 #include "../MCAL/include/gpio.h"
 #include "../MCAL/include/spi.h"
+#include "../MCAL/include/test_pin.h"
 #include "include/board.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -117,6 +118,7 @@ static void service_rx0(void);
 
 /********* contract  */
 bool can_controller_drv_init(void) {
+	tp_can_init();
 	if (can_initialized)
 		return true;
 
@@ -369,7 +371,9 @@ bool can_read(CanFrame_t *frame) {
  *        Sets flag only, work is done in can_process().
  */
 void can_gpio_irq(void) {
+	gpio_drv_write(CAN_TP, HIGH);
 	can_irq_pending = true;
+	gpio_drv_write(CAN_TP, LOW);
 }
 
 /********* HELPERS  *********/

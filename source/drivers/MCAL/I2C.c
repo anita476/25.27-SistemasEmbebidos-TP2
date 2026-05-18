@@ -1,6 +1,7 @@
 #include "include/i2c.h"
 #include "include/gpio.h"
 #include "include/port.h"
+#include "include/test_pin.h"
 
 #include <stdlib.h>
 
@@ -23,6 +24,7 @@ static IRQn_Type const I2C_IRQn[] = I2C_IRQS;		 // Array de IRQs para los modulo
 uint8_t dummy;
 
 void i2c_drv_init() {
+	tp_i2c_init();
 	// Clock gating
 	SIM->SCGC4 |= SIM_SCGC4_I2C0(HIGH);
 	SIM->SCGC5 |= SIM_SCGC5_PORTE(HIGH);
@@ -74,6 +76,7 @@ I2CStatus_t i2c_get_status() {
 }
 
 void I2C_IRQHandler() {
+	gpio_drv_write(I2C_TP, HIGH);
 	static volatile uint8_t isr_count = 0;
 	isr_count++;
 	I2C_ptr->S |= I2C_S_IICIF_MASK; // Reseteo flag de interrupcion
@@ -166,6 +169,7 @@ void I2C_IRQHandler() {
 			I2C.index++;
 		}
 	}
+	gpio_drv_write(I2C_TP, LOW);
 }
 
 __ISR__ I2C0_IRQHandler(void) {
