@@ -12,6 +12,7 @@
 #include "tests/include/uart_test.h"
 #include <stdlib.h>
 
+#define ANGLE_TYPE_COUNT 2U
 #define ANGLE_CHANGE_PERIOD_MS 50U		/* max frequency      */
 #define ANGLE_KEEPALIVE_PERIOD_MS 2000U /* minimum frequency              */
 #define ANGLE_CHANGE_THRESHOLD 5
@@ -116,7 +117,7 @@ void App_Run(void) {
 static void angles_init(void) {
 	const char ids[3] = {'C', 'R', 'O'};
 
-	for (uint8_t i = 0U; i < 3U; i++) {
+	for (uint8_t i = 0U; i < ANGLE_TYPE_COUNT; i++) {
 		g_angles[i].id = ids[i];
 		g_angles[i].last_sent = 0;
 		g_angles[i].pending = false;
@@ -133,9 +134,9 @@ static void angles_init(void) {
 // Only mark pending if |delta| >= threshold
 static void angles_check_rate(void) {
 	sensor_t *s = acc_magn_drv_get_angles();
-	const angle_t current[3] = {s->pitch, s->roll, s->yaw};
+	const angle_t current[ANGLE_TYPE_COUNT] = {s->pitch, s->roll};
 
-	for (uint8_t i = 0U; i < 3U; i++) {
+	for (uint8_t i = 0U; i < ANGLE_TYPE_COUNT; i++) {
 		angle_state_t *a = &g_angles[i];
 		int16_t delta = angle_delta(current[i], a->last_sent);
 		if (abs(delta) >= ANGLE_CHANGE_THRESHOLD) {
@@ -149,9 +150,9 @@ static void angles_check_rate(void) {
 
 static void angles_check_keepalive(void) {
 	sensor_t *s = acc_magn_drv_get_angles();
-	const angle_t current[3] = {s->pitch, s->roll, s->yaw};
+	const angle_t current[ANGLE_TYPE_COUNT] = {s->pitch, s->roll};
 
-	for (uint8_t i = 0U; i < 3U; i++) {
+	for (uint8_t i = 0U; i < ANGLE_TYPE_COUNT; i++) {
 		g_angles[i].pending_value = current[i];
 		g_angles[i].pending = true;
 		g_angles[i].uart_done = false;
@@ -160,7 +161,7 @@ static void angles_check_keepalive(void) {
 
 static void send_pending(void) {
 	/* first we enqueue uart -> handoff to periphral*/
-	for (uint8_t i = 0U; i < 3U; i++) {
+	for (uint8_t i = 0U; i < ANGLE_TYPE_COUNT; i++) {
 		angle_state_t *a = &g_angles[i];
 		if (!a->pending || a->uart_done)
 			continue;
@@ -181,15 +182,15 @@ static void send_pending(void) {
 		}
 	}
 
-	for (uint8_t i = 0U; i < 3U; i++) {
-		uint8_t idx = (g_tx_channel + i) % 3U;
+	for (uint8_t i = 0U; i < ANGLE_TYPE_COUNT; i++) {
+		uint8_t idx = (g_tx_channel + i) % ANGLE_TYPE_COUNT;
 		angle_state_t *a = &g_angles[idx];
 
 		if (!a->pending)
 			continue;
 
 		g_tx_busy = true;
-		g_tx_channel = (uint8_t) ((idx + 1U) % 3U);
+		g_tx_channel = (uint8_t) ((idx + 1U) % ANGLE_TYPE_COUNT);
 		timer_drv_start(g_tx_watchdog_timer, 20U, TIM_MODE_SINGLESHOT, NULL);
 
 		if (!can_send_angle(a->pending_value, a->id, on_can_tx_done)) {

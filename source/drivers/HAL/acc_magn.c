@@ -4,6 +4,42 @@
 #include "../MCAL/include/pisr.h"
 #include <math.h>
 
+// FXOS8700CQ I2C address
+#define FXOS8700CQ_ADDR 0x1D // With pins SA0 = 0, SA1 = 0
+
+// FXOS8700CQ internal register addresses
+#define FXOS8700CQ_STATUS 0x00
+#define FXOS8700CQ_WHOAMI 0x0D
+#define FXOS8700CQ_XYZ_DATA_CFG 0x0E
+#define FXOS8700CQ_CTRL_REG1 0x2A
+#define FXOS8700CQ_M_CTRL_REG1 0x5B
+#define FXOS8700CQ_M_CTRL_REG2 0x5C
+#define FXOS8700CQ_F_SETUP 0x09
+
+#define FXOS8700CQ_WHOAMI_VAL 0xC7 // Production devices
+
+#define FXOS8700CQ_ACCEL_SENS 0.000244f // Sensitivity in g/LSB
+#define FXOS8700CQ_MAGN_SENS 0.1f		// Sensitivity in uT/LSB
+
+#define FXOS8700CQ_ACCEL_RANGE 4  // Accelerometer range in g
+#define FXOS8700CQ_MAGN_RANGE 120 // Magnetometer range in uT
+
+#define FXOS8700CQ_ACCEL_LSB (FXOS8700CQ_ACCEL_SENS * FXOS8700CQ_ACCEL_RANGE) // Accelerometer LSB in g
+#define FXOS8700CQ_MAGN_LSB (FXOS8700CQ_MAGN_SENS * FXOS8700CQ_MAGN_RANGE)	  // Magnetometer LSB in uT
+
+#define FXOS8700CQ_ACCEL_LSB_2G 0.000244f // Accelerometer LSB in g for 2g range
+#define FXOS8700CQ_ACCEL_LSB_4G 0.000488f // Accelerometer LSB in g for 4g range
+#define FXOS8700CQ_ACCEL_LSB_8G 0.000976f // Accelerometer LSB in g for 8g range
+
+#define FXOS8700CQ_OUT_LEN 2 // Bytes
+#define FXOS8700CQ_M_OUT_LEN 2
+#define FXOS8700CQ_AXIS_CANT 3	 // X, Y, Z
+#define FXOS8700CQ_M_AXIS_CANT 3 // X, Y, Z
+#define FXOS8700CQ_DATA_LEN (FXOS8700CQ_AXIS_CANT * FXOS8700CQ_OUT_LEN + FXOS8700CQ_M_AXIS_CANT * FXOS8700CQ_M_OUT_LEN)
+
+// Number of bytes to be read from the FXOS8700CQ in a single I2C transaction
+#define FXOS8700CQ_READ_LEN (1 + FXOS8700CQ_DATA_LEN) // Status + 6 channels (13 bytes)
+
 #define CONFIG_FREQUENCY_HZ 1000U
 
 typedef enum {
@@ -118,7 +154,7 @@ void _acc_magn_read_data(void) {
 
 	// data.yaw = (atan2f(mag_y_comp, mag_x_comp) * 180.0f / (float) M_PI);
 	// leave yaw incomplete for now ...
-	data.yaw = 0;
+	// data.yaw = 0;
 	data.pitch = ((-1) * pitch_rad * 180.0f / (float) M_PI);
 	data.roll = roll_rad * 180.0f / (float) M_PI;
 
