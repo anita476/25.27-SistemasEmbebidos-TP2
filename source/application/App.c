@@ -13,7 +13,8 @@
 #include <stdlib.h>
 
 #define ANGLE_TYPE_COUNT 2U
-#define ANGLE_CHANGE_PERIOD_MS 50U		/* max frequency      */
+/* obs! we put the timers at half time because it has a bug : one angle type is sent every time, alternating */
+#define ANGLE_CHANGE_PERIOD_MS 25U		/* max frequency      */
 #define ANGLE_KEEPALIVE_PERIOD_MS 1000U /* minimum frequency      @todo because they are being sent double now..    */
 #define ANGLE_CHANGE_THRESHOLD 5
 
@@ -25,7 +26,7 @@ typedef struct {
 	bool uart_done;
 } angle_state_t;
 
-static angle_state_t g_angles[3]; /* 0=pitch, 1=roll, 2=yaw        */
+static angle_state_t g_angles[ANGLE_TYPE_COUNT]; /* 0=pitch, 1=roll   */
 static uint32_t g_rate_timer;
 static uint32_t g_keepalive_timer;
 
